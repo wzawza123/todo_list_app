@@ -45,6 +45,9 @@ export const api = {
 
   deleteTask: (id: string) => request<{ removed: string[] }>(`/api/tasks/${id}`, { method: 'DELETE' }),
 
+  moveTask: (id: string, parent_id: string) =>
+    request<Task>(`/api/tasks/${id}/move`, { method: 'POST', body: JSON.stringify({ parent_id }) }),
+
   indent: (id: string, direction: 'in' | 'out') =>
     request<Task>(`/api/tasks/${id}/indent`, { method: 'POST', body: JSON.stringify({ direction }) }),
 

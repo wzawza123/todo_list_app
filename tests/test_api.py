@@ -46,6 +46,19 @@ def test_indent_endpoints(client):
     assert res.json()["level"] == 1
 
 
+def test_move_endpoint(client):
+    res = client.post("/api/tasks/api003/move", json={"parent_id": "api001"})
+    assert res.status_code == 200
+    assert res.json()["level"] == 2
+    roots = client.get("/api/tasks").json()["files"]["p.md"]
+    assert [r["id"] for r in roots] == ["api001"]
+    assert [c["id"] for c in roots[0]["children"]] == ["api002", "api003"]
+
+    bad = client.post("/api/tasks/api001/move", json={"parent_id": "api002"})
+    assert bad.status_code == 400
+    assert bad.json()["error"]["code"] == "BAD_TARGET"
+
+
 def test_today_flow(client):
     client.post("/api/today/toggle", json={"task_id": "api001"})
     client.post("/api/today/toggle", json={"task_id": "api003"})

@@ -200,3 +200,114 @@ def test_stale_today_reference(vault):
     assert payload["items"][1]["stale"] is True
     today_mod.clean_stale(vault, date)
     assert today_mod.read_ids(vault, date) == ["aaa001"]
+
+
+# ---------------------------------------------------------------- move (drag)
+
+
+def test_move_makes_task_a_child_and_keeps_subtree(tmp_path):
+    (tmp_path / "m.md").write_text(
+        "# 标题\n"
+        "\n"
+        "- [ ] A 🆔 mmm001\n"
+        "- [ ] B ⏫ 🆔 mmm002\n"
+        "    - [ ] B1 🆔 mmm003\n"
+        "        - [ ] B1a 🆔 mmm004\n"
+        "- [ ] C 🆔 mmm005\n"
+        "\n"
+        "结尾。\n",
+        encoding="utf-8",
+    )
+    v = Vault(tmp_path)
+    task = v.move_task("mmm002", "mmm001")
+    assert task.level == 2
+    text = (tmp_path / "m.md").read_text(encoding="utf-8")
+    assert text == (
+        "# 标题\n"
+        "\n"
+        "- [ ] A 🆔 mmm001\n"
+        "    - [ ] B ⏫ 🆔 mmm002\n"
+        "        - [ ] B1 🆔 mmm003\n"
+        "            - [ ] B1a 🆔 mmm004\n"
+        "- [ ] C 🆔 mmm005\n"
+        "\n"
+        "结尾。\n"
+    )
+
+
+def test_move_onto_a_parent_below_the_subtree(tmp_path):
+    (tmp_path / "m.md").write_text(
+        "- [ ] A 🆔 nnn001\n"
+        "    - [ ] A1 🆔 nnn002\n"
+        "- [ ] B 🆔 nnn003\n"
+        "    - [ ] B1 🆔 nnn004\n",
+        encoding="utf-8",
+    )
+    v = Vault(tmp_path)
+    v.move_task("nnn001", "nnn003")
+    assert (tmp_path / "m.md").read_text(encoding="utf-8") == (
+        "- [ ] B 🆔 nnn003\n"
+        "    - [ ] B1 🆔 nnn004\n"
+        "    - [ ] A 🆔 nnn001\n"
+        "        - [ ] A1 🆔 nnn002\n"
+    )
+
+
+def test_move_appends_after_existing_children_at_end_of_file(tmp_path):
+    (tmp_path / "m.md").write_text(
+        "- [ ] A 🆔 ppp001\n- [ ] B 🆔 ppp002\n    - [ ] B1 🆔 ppp003",  # no trailing newline
+        encoding="utf-8",
+    )
+    v = Vault(tmp_path)
+    v.move_task("ppp001", "ppp002")
+    assert (tmp_path / "m.md").read_text(encoding="utf-8") == (
+        "- [ ] B 🆔 ppp002\n    - [ ] B1 🆔 ppp003\n    - [ ] A 🆔 ppp001\n"
+    )
+
+
+def test_move_does_not_split_lines(tmp_path):
+    # CRLF input is normalised to LF on read (universal newlines), like every
+    # other write path — move must not introduce stray \r or blank lines.
+    (tmp_path / "m.md").write_bytes(
+        "- [ ] A 🆔 qqq001\r\n- [ ] B 🆔 qqq002\r\n".encode("utf-8")
+    )
+    v = Vault(tmp_path)
+    v.move_task("qqq002", "qqq001")
+    raw = (tmp_path / "m.md").read_bytes().decode("utf-8")
+    assert raw == "- [ ] A 🆔 qqq001\n    - [ ] B 🆔 qqq002\n"
+    assert "\r" not in raw
+
+
+def test_move_rejects_self_and_descendant(vault):
+    before = (vault.root / "projects" / "a.md").read_text(encoding="utf-8")
+    with pytest.raises(VaultError) as exc:
+        vault.move_task("aaa001", "aaa001")
+    assert exc.value.code == "BAD_TARGET"
+    with pytest.raises(VaultError) as exc:
+        vault.move_task("aaa001", "aaa002")
+    assert exc.value.code == "BAD_TARGET"
+    assert (vault.root / "projects" / "a.md").read_text(encoding="utf-8") == before
+
+
+def test_move_respects_four_levels(tmp_path):
+    (tmp_path / "m.md").write_text(
+        "- [ ] L1 🆔 rrr001\n"
+        "    - [ ] L2 🆔 rrr002\n"
+        "        - [ ] L3 🆔 rrr003\n"
+        "- [ ] X 🆔 rrr004\n"
+        "    - [ ] X1 🆔 rrr005\n",
+        encoding="utf-8",
+    )
+    v = Vault(tmp_path)
+    before = (tmp_path / "m.md").read_text(encoding="utf-8")
+    with pytest.raises(VaultError) as exc:
+        v.move_task("rrr004", "rrr003")
+    assert exc.value.code == "MAX_DEPTH"
+    assert (tmp_path / "m.md").read_text(encoding="utf-8") == before
+
+
+def test_move_rejects_cross_file(vault):
+    inbox_task = vault.create_task("跨文件")
+    with pytest.raises(VaultError) as exc:
+        vault.move_task(inbox_task.id, "aaa001")
+    assert exc.value.code == "CROSS_FILE"

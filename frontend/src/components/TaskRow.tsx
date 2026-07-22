@@ -3,15 +3,28 @@ import { useStore } from '../store'
 import type { Task } from '../types'
 import { PriorityBar } from './PriorityBar'
 
+/** 原生 HTML5 拖放接线，由 FileView 提供（把任务拖成另一条任务的子任务）。 */
+export interface RowDnd {
+  draggable: boolean
+  dragging: boolean
+  over: boolean
+  onDragStart: (e: React.DragEvent) => void
+  onDragEnd: () => void
+  onDragOver: (e: React.DragEvent) => void
+  onDragLeave: () => void
+  onDrop: (e: React.DragEvent) => void
+}
+
 interface Props {
   task: Task
   indent?: number
   showFile?: boolean
   dragHandle?: React.ReactNode
   stale?: boolean
+  dnd?: RowDnd
 }
 
-export function TaskRow({ task, indent = 0, showFile = false, dragHandle }: Props) {
+export function TaskRow({ task, indent = 0, showFile = false, dragHandle, dnd }: Props) {
   const { selected, select, patchTask, toggleToday, todayIds, toggleCollapse, collapsed, setDetailOpen, taskById } =
     useStore()
   const [editing, setEditing] = useState(false)
@@ -55,9 +68,19 @@ export function TaskRow({ task, indent = 0, showFile = false, dragHandle }: Prop
       data-task-key={task.key}
       onClick={() => select(task.key)}
       onDoubleClick={() => task.id && setEditing(true)}
+      draggable={!!dnd?.draggable && !editing}
+      onDragStart={dnd?.onDragStart}
+      onDragEnd={dnd?.onDragEnd}
+      onDragOver={dnd?.onDragOver}
+      onDragLeave={dnd?.onDragLeave}
+      onDrop={dnd?.onDrop}
       className={`group flex items-center gap-1.5 rounded px-1.5 py-[3px] text-sm ${
-        isSelected ? 'bg-blue-50 ring-1 ring-inset ring-blue-300' : 'hover:bg-neutral-100'
-      }`}
+        dnd?.over
+          ? 'bg-blue-100 ring-2 ring-inset ring-blue-400'
+          : isSelected
+            ? 'bg-blue-50 ring-1 ring-inset ring-blue-300'
+            : 'hover:bg-neutral-100'
+      } ${dnd?.dragging ? 'opacity-40' : ''}`}
       style={{ paddingLeft: 6 + indent * 18 }}
     >
       {dragHandle}

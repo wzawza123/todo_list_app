@@ -61,6 +61,10 @@ class IndentBody(BaseModel):
     direction: str
 
 
+class MoveBody(BaseModel):
+    parent_id: str
+
+
 class TodayBody(BaseModel):
     date: Optional[str] = None
     task_ids: list[str]
@@ -137,6 +141,12 @@ def create_app(vault_path: Path, serve_static: bool = True, watch: bool = True) 
     @app.post("/api/tasks/{task_id}/indent")
     def indent_task(task_id: str, body: IndentBody):
         task = vault.indent_task(task_id, body.direction)
+        changed()
+        return task.to_dict()
+
+    @app.post("/api/tasks/{task_id}/move")
+    def move_task(task_id: str, body: MoveBody):
+        task = vault.move_task(task_id, body.parent_id)
         changed()
         return task.to_dict()
 

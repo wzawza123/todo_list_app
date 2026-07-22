@@ -68,6 +68,7 @@ interface State {
   patchTask: (id: string, patch: Parameters<typeof api.patchTask>[1]) => Promise<Task | null>
   deleteTask: (id: string) => Promise<void>
   indent: (id: string, direction: 'in' | 'out') => Promise<void>
+  moveTask: (id: string, parentId: string) => Promise<void>
   toggleToday: (id: string) => Promise<void>
   reorderToday: (ids: string[]) => Promise<void>
   carryOver: () => Promise<void>
@@ -164,6 +165,23 @@ export const useStore = create<State>((set, get) => ({
   indent: async (id, direction) => {
     const res = await get().run(() => api.indent(id, direction))
     if (res) await get().refresh()
+  },
+
+  moveTask: async (id, parentId) => {
+    const res = await get().run(() => api.moveTask(id, parentId))
+    if (res) {
+      // 展开新父任务，免得拖进去后看不见
+      set((s) => {
+        if (!s.collapsed.size) return {}
+        const next = new Set(s.collapsed)
+        for (const t of flatten(Object.values(s.snapshot.files).flat())) {
+          if (t.id === parentId) next.delete(t.key)
+        }
+        saveCollapsed(next)
+        return { collapsed: next }
+      })
+      await get().refresh()
+    }
   },
 
   toggleToday: async (id) => {

@@ -477,6 +477,58 @@ class Vault:
             self.write_doc(doc)
             return next(t for t in doc.tasks if t.id == task_id)
 
+    def move_task(self, task_id: str, parent_id: str) -> Task:
+        """Re-parent a task (with its subtree) as the last child of parent_id.
+
+        Same file only; the frontend only ever drags within one file view.
+        """
+        with self.lock:
+            doc, task = self.find(task_id)
+            pdoc, _ = self.find(parent_id)
+            if pdoc.rel != doc.rel:
+                raise VaultError("CROSS_FILE", "暂不支持跨文件拖动")
+            if parent_id == task_id:
+                raise VaultError("BAD_TARGET", "不能把任务拖到它自己上")
+
+            doc = self.ensure_fresh(doc.rel)
+            task = next(t for t in doc.tasks if t.id == task_id)
+            start, end = self._subtree_span(doc, task)
+            subtree = [t for t in doc.tasks if start <= t.line < end]
+            if any(t.id == parent_id for t in subtree):
+                raise VaultError("BAD_TARGET", "不能把任务拖到它自己的子任务上")
+
+            parent = next((t for t in doc.tasks if t.id == parent_id), None)
+            if parent is None:
+                raise VaultError("NOT_FOUND", f"找不到任务 {parent_id}")
+            delta = parent.level + 1 - task.level
+            if max(t.level for t in subtree) + delta > MAX_LEVEL:
+                raise VaultError("MAX_DEPTH", "已达到 4 级嵌套上限")
+
+            eol = doc.eol
+            seg: list[str] = []
+            for i, line in enumerate(doc.lines[start:end]):
+                if not line.endswith("\n"):
+                    line += eol
+                seg.append(line)
+            for t in subtree:
+                t.level += delta
+                seg[t.line - start] = t.to_line() + eol
+
+            del doc.lines[start:end]
+            remaining = [t for t in doc.tasks if not (start <= t.line < end)]
+            for t in remaining:
+                if t.line >= end:
+                    t.line -= end - start
+            doc.tasks = remaining
+
+            parent = next(t for t in doc.tasks if t.id == parent_id)
+            _, insert_at = self._subtree_span(doc, parent)
+            if doc.lines and not doc.lines[-1].endswith("\n") and insert_at >= len(doc.lines):
+                doc.lines[-1] = doc.lines[-1] + eol
+            doc.lines[insert_at:insert_at] = seg
+            self.write_doc(doc)
+            return next(t for t in doc.tasks if t.id == task_id)
+
     def file_tree(self) -> list[dict]:
         out = []
         for rel in sorted(self.files):
