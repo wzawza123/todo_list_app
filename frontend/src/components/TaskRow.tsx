@@ -30,6 +30,7 @@ export function TaskRow({ task, indent = 0, showFile = false, dragHandle, dnd }:
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(task.title)
   const inputRef = useRef<HTMLInputElement>(null)
+  const rowRef = useRef<HTMLDivElement>(null)
   const isSelected = selected === task.key
   const inToday = task.id ? todayIds().has(task.id) : false
   const hasChildren = task.children.length > 0
@@ -65,9 +66,17 @@ export function TaskRow({ task, indent = 0, showFile = false, dragHandle, dnd }:
 
   return (
     <div
+      ref={rowRef}
       data-task-key={task.key}
       onClick={() => select(task.key)}
       onDoubleClick={() => task.id && setEditing(true)}
+      // 按在勾选框 / 箭头 / 优先级这类小控件上时临时关掉拖动：
+      // 否则手一抖就变成拖拽，click 事件被浏览器吞掉（折叠点不动）。
+      onMouseDown={(e) => {
+        if (!dnd?.draggable || !rowRef.current) return
+        const hit = (e.target as HTMLElement).closest('button, input, select, textarea, a, label, [data-nodrag]')
+        rowRef.current.draggable = !hit
+      }}
       draggable={!!dnd?.draggable && !editing}
       onDragStart={dnd?.onDragStart}
       onDragEnd={dnd?.onDragEnd}
@@ -132,6 +141,7 @@ export function TaskRow({ task, indent = 0, showFile = false, dragHandle, dnd }:
 
       {task.blocked && blockers.length > 0 && (
         <span
+          data-nodrag
           className="shrink-0 cursor-pointer text-xs text-amber-600"
           title={`被阻塞于：${blockers.map((b) => b.title).join('、')}`}
           onClick={(e) => {
