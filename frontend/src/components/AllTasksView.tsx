@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useStore } from '../store'
+import { useTaskDnd } from '../useTaskDnd'
 import { PRIORITY_LABEL, PRIORITY_RANK, type Priority, type Task } from '../types'
 import { TaskTree } from './TaskTree'
 import { TaskRow } from './TaskRow'
@@ -8,6 +9,7 @@ type GroupBy = 'file' | 'priority'
 
 export function AllTasksView() {
   const { snapshot } = useStore()
+  const dndFor = useTaskDnd()
   const [groupBy, setGroupBy] = useState<GroupBy>('file')
   const [hideDone, setHideDone] = useState(true)
   const [hideBlocked, setHideBlocked] = useState(false)
@@ -21,6 +23,7 @@ export function AllTasksView() {
     <div className="flex h-full flex-col">
       <header className="flex items-center gap-3 border-b border-neutral-200 px-4 py-2">
         <h1 className="text-sm font-semibold">📋 All Tasks</h1>
+        <span className="text-xs text-neutral-300">拖到另一条任务上 = 成为它的子任务（可跨文件）</span>
         <div className="ml-auto flex items-center gap-3 text-xs text-neutral-600">
           <input
             value={filter}
@@ -51,14 +54,19 @@ export function AllTasksView() {
           ? entries.map(([path, roots]) => (
               <section key={path} className="mb-4">
                 <div className="px-2 py-1 text-xs font-medium text-neutral-500">{path}</div>
-                <TaskTree tasks={sortByPriority(roots)} hideDone={hideDone} hideBlocked={hideBlocked} />
+                <TaskTree
+                  tasks={sortByPriority(roots)}
+                  hideDone={hideDone}
+                  hideBlocked={hideBlocked}
+                  dndFor={dndFor}
+                />
               </section>
             ))
           : groupByPriority(entries, hideDone, hideBlocked, filter).map(([p, tasks]) => (
               <section key={p} className="mb-4">
                 <div className="px-2 py-1 text-xs font-medium text-neutral-500">{PRIORITY_LABEL[p]}</div>
                 {tasks.map((t) => (
-                  <TaskRow key={t.key} task={t} showFile />
+                  <TaskRow key={t.key} task={t} showFile dnd={dndFor(t)} />
                 ))}
               </section>
             ))}

@@ -11,11 +11,13 @@ import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useStore } from '../store'
+import { useTaskDnd } from '../useTaskDnd'
 import type { TodayItem } from '../types'
-import { TaskRow } from './TaskRow'
+import { TaskRow, type RowDnd } from './TaskRow'
 
 export function TodayView() {
   const { today, reorderToday, cleanToday, carryOver, dismissCarryOver, carryOverPrompted } = useStore()
+  const dndFor = useTaskDnd()
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -80,7 +82,7 @@ export function TodayView() {
           >
             <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
               {items.map((item) => (
-                <SortableRow key={item.id} item={item} />
+                <SortableRow key={item.id} item={item} dnd={item.task ? dndFor(item.task) : undefined} />
               ))}
             </SortableContext>
           </DndContext>
@@ -90,7 +92,7 @@ export function TodayView() {
   )
 }
 
-function SortableRow({ item }: { item: TodayItem }) {
+function SortableRow({ item, dnd }: { item: TodayItem; dnd?: RowDnd }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id })
   const toggleToday = useStore((s) => s.toggleToday)
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }
@@ -99,8 +101,14 @@ function SortableRow({ item }: { item: TodayItem }) {
     <span
       {...attributes}
       {...listeners}
+      // 手柄专管 dnd-kit 排序：挡掉原生拖放，免得同时触发「拖成子任务」
+      draggable={false}
+      onDragStart={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+      }}
       className="shrink-0 cursor-grab select-none px-0.5 text-xs text-neutral-300 hover:text-neutral-500"
-      title="拖拽排序"
+      title="拖拽排序（拖整行则是变成子任务）"
     >
       ⠿
     </span>
@@ -120,7 +128,7 @@ function SortableRow({ item }: { item: TodayItem }) {
 
   return (
     <div ref={setNodeRef} style={style}>
-      <TaskRow task={item.task} showFile dragHandle={handle} />
+      <TaskRow task={item.task} showFile dragHandle={handle} dnd={dnd} />
     </div>
   )
 }

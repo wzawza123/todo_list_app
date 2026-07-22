@@ -480,24 +480,27 @@ class Vault:
     def move_task(self, task_id: str, parent_id: str) -> Task:
         """Re-parent a task (with its subtree) as the last child of parent_id.
 
-        Same file only; the frontend only ever drags within one file view.
+        Works across files — 🆔 are vault-wide, so dependencies and Today
+        references keep pointing at the same tasks after the move.
         """
         with self.lock:
-            doc, task = self.find(task_id)
-            pdoc, _ = self.find(parent_id)
-            if pdoc.rel != doc.rel:
-                raise VaultError("CROSS_FILE", "暂不支持跨文件拖动")
             if parent_id == task_id:
                 raise VaultError("BAD_TARGET", "不能把任务拖到它自己上")
+            src, _ = self.find(task_id)
+            dst, _ = self.find(parent_id)
+            same_file = src.rel == dst.rel
 
-            doc = self.ensure_fresh(doc.rel)
-            task = next(t for t in doc.tasks if t.id == task_id)
+            doc = self.ensure_fresh(src.rel)
+            task = next((t for t in doc.tasks if t.id == task_id), None)
+            if task is None:
+                raise VaultError("NOT_FOUND", f"找不到任务 {task_id}")
             start, end = self._subtree_span(doc, task)
             subtree = [t for t in doc.tasks if start <= t.line < end]
             if any(t.id == parent_id for t in subtree):
                 raise VaultError("BAD_TARGET", "不能把任务拖到它自己的子任务上")
 
-            parent = next((t for t in doc.tasks if t.id == parent_id), None)
+            pdoc = doc if same_file else self.ensure_fresh(dst.rel)
+            parent = next((t for t in pdoc.tasks if t.id == parent_id), None)
             if parent is None:
                 raise VaultError("NOT_FOUND", f"找不到任务 {parent_id}")
             delta = parent.level + 1 - task.level
@@ -506,7 +509,7 @@ class Vault:
 
             eol = doc.eol
             seg: list[str] = []
-            for i, line in enumerate(doc.lines[start:end]):
+            for line in doc.lines[start:end]:
                 if not line.endswith("\n"):
                     line += eol
                 seg.append(line)
@@ -514,20 +517,26 @@ class Vault:
                 t.level += delta
                 seg[t.line - start] = t.to_line() + eol
 
+            # 先从源文件摘掉，并就地修正剩余任务的行号
             del doc.lines[start:end]
             remaining = [t for t in doc.tasks if not (start <= t.line < end)]
             for t in remaining:
                 if t.line >= end:
                     t.line -= end - start
             doc.tasks = remaining
+            if not same_file:
+                self.write_doc(doc)
 
-            parent = next(t for t in doc.tasks if t.id == parent_id)
-            _, insert_at = self._subtree_span(doc, parent)
-            if doc.lines and not doc.lines[-1].endswith("\n") and insert_at >= len(doc.lines):
-                doc.lines[-1] = doc.lines[-1] + eol
-            doc.lines[insert_at:insert_at] = seg
-            self.write_doc(doc)
-            return next(t for t in doc.tasks if t.id == task_id)
+            parent = next(t for t in pdoc.tasks if t.id == parent_id)
+            _, insert_at = self._subtree_span(pdoc, parent)
+            peol = pdoc.eol
+            if peol != eol:
+                seg = [ln[: -len(eol)] + peol for ln in seg]
+            if pdoc.lines and not pdoc.lines[-1].endswith("\n") and insert_at >= len(pdoc.lines):
+                pdoc.lines[-1] = pdoc.lines[-1] + peol
+            pdoc.lines[insert_at:insert_at] = seg
+            self.write_doc(pdoc)
+            return next(t for t in pdoc.tasks if t.id == task_id)
 
     def file_tree(self) -> list[dict]:
         out = []

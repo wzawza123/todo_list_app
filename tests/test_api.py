@@ -59,6 +59,16 @@ def test_move_endpoint(client):
     assert bad.json()["error"]["code"] == "BAD_TARGET"
 
 
+def test_move_endpoint_across_files(client):
+    created = client.post("/api/tasks", json={"title": "从 Inbox 拖走"}).json()
+    moved = client.post(f"/api/tasks/{created['id']}/move", json={"parent_id": "api001"}).json()
+    assert moved["file"] == "p.md" and moved["level"] == 2
+
+    files = client.get("/api/tasks").json()["files"]
+    assert files.get("Inbox.md", []) == []
+    assert [c["id"] for c in files["p.md"][0]["children"]] == ["api002", created["id"]]
+
+
 def test_today_flow(client):
     client.post("/api/today/toggle", json={"task_id": "api001"})
     client.post("/api/today/toggle", json={"task_id": "api003"})

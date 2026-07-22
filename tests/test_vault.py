@@ -306,8 +306,41 @@ def test_move_respects_four_levels(tmp_path):
     assert (tmp_path / "m.md").read_text(encoding="utf-8") == before
 
 
-def test_move_rejects_cross_file(vault):
-    inbox_task = vault.create_task("跨文件")
-    with pytest.raises(VaultError) as exc:
-        vault.move_task(inbox_task.id, "aaa001")
-    assert exc.value.code == "CROSS_FILE"
+def test_move_across_files(vault):
+    """Inbox 里的任务拖到另一个文件的任务下（All Tasks / Today 视图会用到）。"""
+    moved = vault.create_task("跨文件")
+    child = vault.create_task("跨文件的子任务", parent_id=moved.id)
+    task = vault.move_task(moved.id, "aaa001")
+    assert task.file == "projects/a.md" and task.level == 2
+
+    assert (vault.root / "Inbox.md").read_text(encoding="utf-8") == ""
+    text = (vault.root / "projects" / "a.md").read_text(encoding="utf-8")
+    assert text == (
+        "# 项目 A\n"
+        "\n"
+        "前言段落，不能被改动。\n"
+        "\n"
+        "- [ ] 根任务一 ⏫ 🆔 aaa001\n"
+        "    - [ ] 子任务 🆔 aaa002\n"
+        f"    - [ ] 跨文件 🆔 {moved.id}\n"
+        f"        - [ ] 跨文件的子任务 🆔 {child.id}\n"
+        "- [ ] 根任务二 🆔 aaa003\n"
+        "\n"
+        "结尾段落。\n"
+    )
+    # 依赖关系按 🆔 走，跨文件后仍然有效
+    vault.update_task("aaa003", {"depends_on": [moved.id]})
+    tasks = vault.all_tasks()
+    vault.compute_blocked(tasks)
+    assert vault.index()["aaa003"].blocked is True
+
+
+def test_move_across_files_into_empty_file(tmp_path):
+    (tmp_path / "src.md").write_text("- [ ] A 🆔 sss001\n", encoding="utf-8")
+    (tmp_path / "dst.md").write_text("# 只有标题\n- [ ] D 🆔 sss002", encoding="utf-8")  # 末行无换行
+    v = Vault(tmp_path)
+    v.move_task("sss001", "sss002")
+    assert (tmp_path / "src.md").read_text(encoding="utf-8") == ""
+    assert (tmp_path / "dst.md").read_text(encoding="utf-8") == (
+        "# 只有标题\n- [ ] D 🆔 sss002\n    - [ ] A 🆔 sss001\n"
+    )
