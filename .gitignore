@@ -8,7 +8,7 @@ frontend/dist/
 tsconfig.tsbuildinfo
 
 # 运行时产生的每日日程文件（示例 vault 只保留任务源文件）
-vault/Today/
+vault/
 
 # 编辑器 / 工具
 .claude/
