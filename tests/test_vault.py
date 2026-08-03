@@ -30,6 +30,40 @@ def test_bootstrap_creates_inbox_and_today(tmp_path):
     assert (tmp_path / "Today").is_dir()
 
 
+def test_abs_rejects_sibling_with_common_path_prefix(tmp_path):
+    root = tmp_path / "vault"
+    vault = Vault(root)
+
+    with pytest.raises(VaultError) as exc:
+        vault.abs("../vault-escape/project.md")
+
+    assert exc.value.code == "BAD_PATH"
+
+
+@pytest.mark.parametrize("path", ["../outside.md", "projects/../outside.md", r"projects\x.md"])
+def test_project_operations_reject_path_traversal(tmp_path, path):
+    vault = Vault(tmp_path)
+
+    with pytest.raises(VaultError) as exc:
+        vault.rename_project(path, "safe")
+
+    assert exc.value.code == "BAD_PROJECT_PATH"
+
+
+def test_project_rename_falls_back_when_hard_links_are_unavailable(vault, monkeypatch):
+    def unavailable(*_args, **_kwargs):
+        raise OSError("hard links unavailable")
+
+    monkeypatch.setattr("mdtask.vault.os.link", unavailable)
+    before = (vault.root / "projects" / "a.md").read_bytes()
+
+    project = vault.rename_project("projects/a.md", "renamed")
+
+    assert project["path"] == "projects/renamed.md"
+    assert not (vault.root / "projects" / "a.md").exists()
+    assert (vault.root / "projects" / "renamed.md").read_bytes() == before
+
+
 def test_non_task_lines_untouched(vault):
     vault.update_task("aaa001", {"priority": "highest"})
     text = (vault.root / "projects" / "a.md").read_text(encoding="utf-8")

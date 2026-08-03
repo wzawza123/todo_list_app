@@ -6,10 +6,12 @@ import datetime as dt
 import hashlib
 import logging
 import os
+import re
+import shutil
 import tempfile
 import threading
-from dataclasses import dataclass, field
-from pathlib import Path
+from dataclasses import dataclass, field, replace
+from pathlib import Path, PurePosixPath
 from typing import Iterable, Optional
 
 from .parser import (
@@ -28,6 +30,23 @@ log = logging.getLogger("mdtask")
 SKIP_DIRS = {".obsidian", ".trash", ".git", "node_modules", "__pycache__"}
 INBOX = "Inbox.md"
 TODAY_DIR = "Today"
+PROJECTS_DIR = "projects"
+PROJECT_TRASH_DIR = ".trash/mdtask-projects"
+
+_WINDOWS_RESERVED_NAMES = {
+    "con",
+    "prn",
+    "aux",
+    "nul",
+    "clock$",
+    "conin$",
+    "conout$",
+    *(f"com{i}" for i in range(1, 10)),
+    *(f"lpt{i}" for i in range(1, 10)),
+    *(f"com{i}" for i in "¹²³"),
+    *(f"lpt{i}" for i in "¹²³"),
+}
+_WINDOWS_ILLEGAL_CHARS = re.compile(r'[<>:"/\\|?*]|[\x00-\x1f]')
 
 
 class VaultError(Exception):
@@ -95,7 +114,9 @@ class Vault:
 
     def abs(self, rel: str) -> Path:
         p = (self.root / rel).resolve()
-        if not str(p).startswith(str(self.root)):
+        try:
+            p.relative_to(self.root)
+        except ValueError:
             raise VaultError("BAD_PATH", f"路径越界: {rel}")
         return p
 
@@ -243,6 +264,238 @@ class Vault:
             "files": by_file,
             "warnings": self.warnings + self.dangling_dep_warnings(),
         }
+
+    def project_summaries(self) -> list[dict]:
+        """Return dashboard summaries for markdown files used as projects.
+
+        Inbox and daily Today files are app-level views rather than projects.
+        Tasks are counted from the flat parser output so descendants contribute
+        to progress as independent tasks.  Until tasks have a creation time,
+        their file position is the best available recency signal.
+        """
+        with self.lock:
+            tasks = self.all_tasks()
+            self.compute_blocked(tasks)
+            projects: list[dict] = []
+
+            for rel in sorted(self.files):
+                if self._is_project_rel(rel):
+                    projects.append(self._project_summary(rel))
+
+            return projects
+
+    @staticmethod
+    def _is_project_rel(rel: str) -> bool:
+        parts = PurePosixPath(rel).parts
+        if not parts:
+            return False
+        return rel.casefold() != INBOX.casefold() and parts[0].casefold() != TODAY_DIR.casefold()
+
+    def _project_summary(self, rel: str) -> dict:
+        doc_tasks = self.files[rel].tasks
+        self.compute_blocked(doc_tasks)
+        total = len(doc_tasks)
+        completed = sum(1 for task in doc_tasks if task.status == "done")
+        latest = sorted(doc_tasks, key=lambda task: task.line, reverse=True)[:5]
+        return {
+            "path": rel,
+            "name": Path(rel).stem,
+            "total_tasks": total,
+            "completed_tasks": completed,
+            "progress": round(completed * 100 / total) if total else 0,
+            # Recent tasks are a flat list.  A shallow dataclass copy lets us
+            # reuse Task.to_dict() without leaking children attached earlier.
+            "latest_tasks": [replace(task, children=[]).to_dict() for task in latest],
+        }
+
+    @staticmethod
+    def _validate_windows_component(component: str, code: str) -> None:
+        if (
+            not component
+            or component in {".", ".."}
+            or component.endswith((" ", "."))
+            or _WINDOWS_ILLEGAL_CHARS.search(component)
+            or len(component) > 255
+        ):
+            raise VaultError(code, f"非法文件名: {component}")
+        if component.split(".", 1)[0].casefold() in _WINDOWS_RESERVED_NAMES:
+            raise VaultError(code, f"Windows 保留文件名不可用: {component}")
+
+    @classmethod
+    def _project_filename(cls, name: str) -> str:
+        value = name
+        if not value or value != value.strip() or "/" in value or "\\" in value:
+            raise VaultError("BAD_PROJECT_NAME", "项目名称不能为空或包含路径分隔符")
+        if value.casefold().endswith(".md"):
+            value = value[:-3]
+        if not value or value in {".", ".."} or value.endswith((" ", ".")):
+            raise VaultError("BAD_PROJECT_NAME", "项目名称不能为空或使用相对路径")
+        filename = value + ".md"
+        cls._validate_windows_component(filename, "BAD_PROJECT_NAME")
+        return filename
+
+    @classmethod
+    def _validate_project_rel(cls, project_path: str) -> str:
+        if not project_path or project_path != project_path.strip() or "\\" in project_path:
+            raise VaultError("BAD_PROJECT_PATH", "非法项目路径")
+        raw_parts = project_path.split("/")
+        if any(part in {"", ".", ".."} for part in raw_parts):
+            raise VaultError("BAD_PROJECT_PATH", "项目路径不可越界或包含空目录")
+        for part in raw_parts:
+            cls._validate_windows_component(part, "BAD_PROJECT_PATH")
+        rel = PurePosixPath(*raw_parts).as_posix()
+        if not rel.casefold().endswith(".md"):
+            raise VaultError("BAD_PROJECT_PATH", "项目文件必须是 Markdown 文件")
+        if not cls._is_project_rel(rel):
+            raise VaultError("BAD_PROJECT_PATH", "Inbox 和 Today 不是项目")
+        return rel
+
+    def _resolve_project_rel(self, project_path: str) -> str:
+        requested = self._validate_project_rel(project_path)
+        if requested in self.files and self._is_project_rel(requested):
+            return requested
+        matches = [
+            rel
+            for rel in self.files
+            if self._is_project_rel(rel) and rel.casefold() == requested.casefold()
+        ]
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            raise VaultError("PROJECT_EXISTS", f"存在大小写冲突的项目: {project_path}")
+        raise VaultError("NOT_FOUND", f"项目不存在: {project_path}")
+
+    def _assert_project_target_available(
+        self, target_rel: str, ignore_rel: Optional[str] = None
+    ) -> None:
+        target_key = target_rel.casefold()
+        for path in self.md_paths():
+            existing_rel = self.rel(path)
+            if ignore_rel is not None and existing_rel == ignore_rel:
+                continue
+            if existing_rel.casefold() == target_key:
+                raise VaultError("PROJECT_EXISTS", f"项目已存在: {target_rel}")
+        target = self.abs(target_rel)
+        if os.path.lexists(target):
+            if ignore_rel is None or target != self.abs(ignore_rel):
+                raise VaultError("PROJECT_EXISTS", f"项目已存在: {target_rel}")
+
+    @staticmethod
+    def _move_file_no_replace(source: Path, target: Path) -> None:
+        """Move a regular file without ever replacing an existing target."""
+        if source == target:
+            # WindowsPath equality is case-insensitive.  This branch is only a
+            # case-only rename of the same file, so replacing another file is
+            # impossible.
+            os.replace(source, target)
+            return
+        try:
+            os.link(source, target)
+        except FileExistsError:
+            raise
+        except OSError:
+            # Some network/FAT-style vaults do not support hard links.  The
+            # exclusive destination mode keeps the same no-overwrite promise.
+            target_created = False
+            try:
+                with source.open("rb") as src, target.open("xb") as dst:
+                    target_created = True
+                    shutil.copyfileobj(src, dst)
+                shutil.copystat(source, target, follow_symlinks=False)
+            except Exception:
+                if target_created:
+                    target.unlink(missing_ok=True)
+                raise
+        try:
+            source.unlink()
+        except OSError:
+            target.unlink(missing_ok=True)
+            raise
+
+    def create_project(self, name: str) -> dict:
+        """Create an empty project in ``projects/`` and return its summary."""
+        with self.lock:
+            self.refresh_if_stale()
+            filename = self._project_filename(name)
+            rel = f"{PROJECTS_DIR}/{filename}"
+            self._assert_project_target_available(rel)
+            path = self.abs(rel)
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                with path.open("x", encoding="utf-8"):
+                    pass
+            except FileExistsError:
+                raise VaultError("PROJECT_EXISTS", f"项目已存在: {rel}")
+            except OSError as exc:
+                raise VaultError("IO_ERROR", f"无法创建项目: {rel}", str(exc))
+            self.scan()
+            if rel not in self.files:  # An empty UTF-8 file should always be readable.
+                raise VaultError("IO_ERROR", f"无法读取新项目: {rel}")
+            return self._project_summary(rel)
+
+    def rename_project(self, project_path: str, name: str) -> dict:
+        """Rename only a project's filename, keeping its current directory."""
+        with self.lock:
+            self.refresh_if_stale()
+            old_rel = self._resolve_project_rel(project_path)
+            filename = self._project_filename(name)
+            parent = PurePosixPath(old_rel).parent
+            new_rel = filename if str(parent) == "." else f"{parent.as_posix()}/{filename}"
+            if new_rel == old_rel:
+                return self._project_summary(old_rel)
+            self._assert_project_target_available(new_rel, ignore_rel=old_rel)
+            source = self.abs(old_rel)
+            target = self.abs(new_rel)
+            try:
+                self._move_file_no_replace(source, target)
+            except FileExistsError:
+                raise VaultError("PROJECT_EXISTS", f"项目已存在: {new_rel}")
+            except OSError as exc:
+                raise VaultError("IO_ERROR", f"无法重命名项目: {old_rel}", str(exc))
+            self.scan()
+            if new_rel not in self.files:
+                raise VaultError("IO_ERROR", f"无法读取重命名后的项目: {new_rel}")
+            return self._project_summary(new_rel)
+
+    def _unique_trash_rel(self, project_rel: str) -> str:
+        base = PurePosixPath(PROJECT_TRASH_DIR) / PurePosixPath(project_rel)
+        candidate = base
+        suffix = 1
+        while os.path.lexists(self.abs(candidate.as_posix())):
+            candidate = base.with_name(f"{base.stem}.{suffix}{base.suffix}")
+            suffix += 1
+        return candidate.as_posix()
+
+    def delete_project(self, project_path: str) -> dict:
+        """Move a project to an app-owned trash area and clean dependencies."""
+        with self.lock:
+            self.refresh_if_stale()
+            rel = self._resolve_project_rel(project_path)
+            doc = self.ensure_fresh(rel)
+            candidate_ids = [task.id for task in doc.tasks if task.id]
+            source = self.abs(rel)
+            trash_rel = self._unique_trash_rel(rel)
+            target = self.abs(trash_rel)
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                self._move_file_no_replace(source, target)
+            except FileExistsError:
+                raise VaultError("PROJECT_EXISTS", f"回收站目标已存在: {trash_rel}")
+            except OSError as exc:
+                raise VaultError("IO_ERROR", f"无法删除项目: {rel}", str(exc))
+            self.scan()
+            # A formerly de-duplicated task in another file can become the new
+            # owner of the same id after this project disappears.  Such an id
+            # is still live and must retain its dependencies/Today references.
+            remaining_ids = self.taken_ids()
+            removed_ids = [task_id for task_id in candidate_ids if task_id not in remaining_ids]
+            self._purge_dependencies(removed_ids)
+            self.scan()
+            return {
+                "deleted": rel,
+                "trashed_to": trash_rel,
+                "removed_task_ids": removed_ids,
+            }
 
     # ------------------------------------------------------------------ writing
 

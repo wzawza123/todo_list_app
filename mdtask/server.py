@@ -70,6 +70,10 @@ class TodayBody(BaseModel):
     task_ids: list[str]
 
 
+class ProjectNameBody(BaseModel):
+    name: str
+
+
 def create_app(vault_path: Path, serve_static: bool = True, watch: bool = True) -> FastAPI:
     vault = Vault(vault_path)
     hub = Hub()
@@ -96,7 +100,12 @@ def create_app(vault_path: Path, serve_static: bool = True, watch: bool = True) 
 
     @app.exception_handler(VaultError)
     async def _vault_error(_request: Request, exc: VaultError):
-        status = {"CYCLE_DETECTED": 409, "NOT_FOUND": 404}.get(exc.code, 400)
+        status = {
+            "CYCLE_DETECTED": 409,
+            "PROJECT_EXISTS": 409,
+            "NOT_FOUND": 404,
+            "IO_ERROR": 500,
+        }.get(exc.code, 400)
         return JSONResponse(
             status_code=status,
             content={"error": {"code": exc.code, "message": exc.message, "detail": exc.detail}},
@@ -157,6 +166,30 @@ def create_app(vault_path: Path, serve_static: bool = True, watch: bool = True) 
         vault.refresh_if_stale()
         files = [f for f in vault.file_tree() if not f["path"].startswith(TODAY_DIR + "/")]
         return {"files": files, "inbox": INBOX}
+
+    @app.get("/api/projects")
+    def get_projects():
+        vault.refresh_if_stale()
+        return {"projects": vault.project_summaries()}
+
+    @app.post("/api/projects", status_code=201)
+    def post_project(body: ProjectNameBody):
+        project = vault.create_project(body.name)
+        changed()
+        return project
+
+    @app.patch("/api/projects/{project_path:path}")
+    def patch_project(project_path: str, body: ProjectNameBody):
+        project = vault.rename_project(project_path, body.name)
+        changed()
+        return project
+
+    @app.delete("/api/projects/{project_path:path}")
+    def delete_project(project_path: str):
+        result = vault.delete_project(project_path)
+        today_mod.purge_ids(vault, result["removed_task_ids"])
+        changed()
+        return result
 
     # ------------------------------------------------------------------ today
 

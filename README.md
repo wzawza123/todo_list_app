@@ -29,7 +29,7 @@ uv run mdtask --vault ./vault
 # → http://127.0.0.1:8722
 ```
 
-`--vault` 指向你的 Obsidian vault（或其中一个子目录）。仓库自带 `./vault` 作为示例。
+`--vault` 指向你的 Obsidian vault（或其中一个子目录）。默认使用本地 `./vault`，其中的任务内容不会纳入 Git。
 
 ### 开发模式
 
@@ -37,6 +37,21 @@ uv run mdtask --vault ./vault
 uv run mdtask --vault ./vault      # 终端 1：后端 :8722
 cd frontend && npm run dev         # 终端 2：Vite :5173（已配置 /api 与 /ws 代理）
 ```
+
+### 项目 Dashboard
+
+Dashboard 是默认首页。除 `Inbox.md` 与 `Today/` 日程文件外，每个 Markdown 文件都视为一个项目；项目卡展示全部层级任务的完成进度，以及文件中位置最靠后的最近任务。点击项目卡可进入对应的单文件任务视图。
+
+当前任务格式没有创建时间字段，因此“最新任务”按任务在项目文件中的位置倒序计算，而不是伪造时间排序。
+
+### 项目管理
+
+从侧栏进入「项目管理」（或按 `G` `P`）可以完成项目的增删改查：
+
+- 创建项目：输入名称后创建空的 `projects/<项目名>.md`。
+- 查看项目：列表展示路径、进度、任务数和最新任务，点击即可进入项目任务视图。
+- 重命名项目：只修改 Markdown 文件名，文件内容保持不变。
+- 删除项目：文件会移动到 vault 的 `.trash/mdtask-projects/`，不会直接擦除；相关任务的 Today 引用和跨任务依赖会同步清理。
 
 ### 测试
 
@@ -51,7 +66,7 @@ cd frontend && npm run dev         # 终端 2：Vite :5173（已配置 /api 与 
 | 键 | 作用 |
 |---|---|
 | `Q` | 快速添加浮层（连续录入，`Esc` 关闭）|
-| `G` `T` / `G` `I` / `G` `A` | 切换到 Today / Inbox / All Tasks |
+| `G` `D` / `G` `P` / `G` `T` / `G` `I` / `G` `A` | 切换到 Dashboard / 项目管理 / Today / Inbox / All Tasks |
 | `↑` `↓` | 移动选中 |
 | `1`–`4` / `0` | 设定优先级 最高/高/中/低 / 清除 |
 | `Space` | 开合右侧详情面板 |

@@ -1,7 +1,7 @@
 import { useStore } from '../store'
 
 export function Sidebar() {
-  const { view, setView, files, inbox, today, snapshot } = useStore()
+  const { view, setView, files, projects, inbox, today, snapshot } = useStore()
   const openTotal = files.reduce((n, f) => n + f.open, 0)
   const todayOpen = (today?.total ?? 0) - (today?.done ?? 0)
 
@@ -17,22 +17,27 @@ export function Sidebar() {
     </button>
   )
 
-  const otherFiles = files.filter((f) => f.path !== inbox)
-
   return (
     <aside className="flex h-full w-60 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-neutral-200 bg-neutral-50 p-2">
       <div className="px-2 pb-2 text-xs font-semibold tracking-wide text-neutral-400">MD TASK MANAGER</div>
+      {item(view.kind === 'dashboard', '▦ Dashboard', projectsOpenBadge(projects), () =>
+        setView({ kind: 'dashboard' }),
+      )}
+      {item(view.kind === 'projects', '▤ 项目管理', projects.length, () => setView({ kind: 'projects' }))}
       {item(view.kind === 'today', '☀ Today', todayOpen, () => setView({ kind: 'today' }))}
       {item(view.kind === 'inbox', '📥 Inbox', files.find((f) => f.path === inbox)?.open, () =>
         setView({ kind: 'inbox' }),
       )}
       {item(view.kind === 'all', '📋 All Tasks', openTotal, () => setView({ kind: 'all' }))}
 
-      <div className="mt-3 px-2 pb-1 text-xs font-semibold tracking-wide text-neutral-400">文件</div>
-      {otherFiles.length === 0 && <div className="px-2 text-xs text-neutral-400">（暂无其他 md 文件）</div>}
-      {otherFiles.map((f) =>
-        item(view.kind === 'file' && view.file === f.path, f.path, f.open, () =>
-          setView({ kind: 'file', file: f.path }),
+      <div className="mt-3 px-2 pb-1 text-xs font-semibold tracking-wide text-neutral-400">项目</div>
+      {projects.length === 0 && <div className="px-2 text-xs text-neutral-400">（暂无项目）</div>}
+      {projects.map((project) =>
+        item(
+          view.kind === 'file' && view.file === project.path,
+          project.name,
+          project.total_tasks - project.completed_tasks,
+          () => setView({ kind: 'file', file: project.path }),
         ),
       )}
 
@@ -50,7 +55,7 @@ export function Sidebar() {
           </div>
         )}
         <div>
-          <kbd>Q</kbd> 快速添加 · <kbd>G</kbd>+<kbd>T/I/A</kbd> 切换视图
+          <kbd>Q</kbd> 快速添加 · <kbd>G</kbd>+<kbd>D/P/T/I/A</kbd> 切换视图
         </div>
         <div>
           <kbd>↑↓</kbd> 选择 · <kbd>1-4</kbd> 优先级 · <kbd>T</kbd> 今日 · <kbd>Space</kbd> 详情
@@ -58,4 +63,8 @@ export function Sidebar() {
       </div>
     </aside>
   )
+}
+
+function projectsOpenBadge(projects: { total_tasks: number; completed_tasks: number }[]): number {
+  return projects.reduce((total, project) => total + project.total_tasks - project.completed_tasks, 0)
 }

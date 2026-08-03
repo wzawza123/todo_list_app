@@ -1,4 +1,5 @@
 import datetime as dt
+from urllib.parse import quote
 
 import pytest
 from fastapi.testclient import TestClient
@@ -100,6 +101,235 @@ def test_files_endpoint_hides_today_dir(client):
     data = client.get("/api/files").json()
     assert all(not f["path"].startswith("Today/") for f in data["files"])
     assert data["inbox"] == "Inbox.md"
+
+
+def test_projects_endpoint_returns_dashboard_summaries(client):
+    root = client.vault_root
+    (root / "empty.md").write_text("# Empty project\n", encoding="utf-8")
+    (root / "projects").mkdir()
+    (root / "projects" / "release.md").write_text(
+        "- [x] First \U0001f194 rel001\n"
+        "- [ ] Second \U0001f194 rel002\n"
+        "- [x] Third \U0001f194 rel003\n"
+        "- [ ] Fourth \U0001f194 rel004\n"
+        "- [x] Fifth \U0001f194 rel005\n"
+        "- [ ] Sixth \U0001f194 rel006\n",
+        encoding="utf-8",
+    )
+    (root / "Today" / "2026-08-03.md").write_text(
+        "- [[rel001]]\n", encoding="utf-8"
+    )
+    client.post("/api/tasks", json={"title": "Inbox is not a project"})
+    client.patch("/api/tasks/api002", json={"status": "done"})
+
+    response = client.get("/api/projects")
+
+    assert response.status_code == 200
+    projects = response.json()["projects"]
+    assert [project["path"] for project in projects] == [
+        "empty.md",
+        "p.md",
+        "projects/release.md",
+    ]
+
+    empty = projects[0]
+    assert empty == {
+        "path": "empty.md",
+        "name": "empty",
+        "total_tasks": 0,
+        "completed_tasks": 0,
+        "progress": 0,
+        "latest_tasks": [],
+    }
+
+    project = projects[1]
+    assert project["name"] == "p"
+    assert project["total_tasks"] == 3
+    assert project["completed_tasks"] == 1
+    assert project["progress"] == 33
+    assert [task["id"] for task in project["latest_tasks"]] == [
+        "api003",
+        "api002",
+        "api001",
+    ]
+    assert all(task["children"] == [] for task in project["latest_tasks"])
+
+    release = projects[2]
+    assert release["name"] == "release"
+    assert release["total_tasks"] == 6
+    assert release["completed_tasks"] == 3
+    assert release["progress"] == 50
+    assert [task["id"] for task in release["latest_tasks"]] == [
+        "rel006",
+        "rel005",
+        "rel004",
+        "rel003",
+        "rel002",
+    ]
+    assert all("blocked" in task and "key" in task for task in release["latest_tasks"])
+
+
+def _project_url(path: str) -> str:
+    return "/api/projects/" + quote(path, safe="/")
+
+
+def test_project_create_and_rename_preserves_directory_and_content(client):
+    created = client.post("/api/projects", json={"name": "中文项目.md"})
+
+    assert created.status_code == 201
+    assert created.json() == {
+        "path": "projects/中文项目.md",
+        "name": "中文项目",
+        "total_tasks": 0,
+        "completed_tasks": 0,
+        "progress": 0,
+        "latest_tasks": [],
+    }
+    source = client.vault_root / "projects" / "中文项目.md"
+    assert source.read_text(encoding="utf-8") == ""
+    content = "项目说明，不应随重命名改变。\n\n- [ ] 第一项 🆔 zh0001\n"
+    source.write_text(content, encoding="utf-8")
+
+    renamed = client.patch(_project_url("projects/中文项目.md"), json={"name": "发布计划"})
+
+    assert renamed.status_code == 200
+    assert renamed.json()["path"] == "projects/发布计划.md"
+    target = client.vault_root / "projects" / "发布计划.md"
+    assert not source.exists()
+    assert target.read_text(encoding="utf-8") == content
+    paths = [p["path"] for p in client.get("/api/projects").json()["projects"]]
+    assert "projects/发布计划.md" in paths
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "",
+        "../逃逸",
+        "a/b",
+        r"a\b",
+        "CON",
+        "nul.md",
+        "COM1.txt",
+        "bad:name",
+        "?",
+        "bad.",
+        "bad ",
+    ],
+)
+def test_project_create_rejects_unsafe_names(client, name):
+    response = client.post("/api/projects", json={"name": name})
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "BAD_PROJECT_NAME"
+    assert not (client.vault_root.parent / "逃逸.md").exists()
+
+
+def test_project_names_and_source_paths_are_case_insensitive(client):
+    assert client.post("/api/projects", json={"name": "Foo"}).status_code == 201
+
+    duplicate = client.post("/api/projects", json={"name": "foo.md"})
+    assert duplicate.status_code == 409
+    assert duplicate.json()["error"]["code"] == "PROJECT_EXISTS"
+
+    renamed = client.patch(_project_url("PROJECTS/foo.md"), json={"name": "Bar"})
+    assert renamed.status_code == 200
+    assert renamed.json()["path"] == "projects/Bar.md"
+
+    for reserved in ["inbox.md", "today/2026-08-03.md"]:
+        response = client.delete(_project_url(reserved))
+        assert response.status_code == 400
+        assert response.json()["error"]["code"] == "BAD_PROJECT_PATH"
+
+
+def test_project_rename_rejects_same_directory_collision(client):
+    root = client.vault_root
+    (root / "one.md").write_text("one", encoding="utf-8")
+    (root / "Two.md").write_text("two", encoding="utf-8")
+
+    response = client.patch(_project_url("one.md"), json={"name": "two"})
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "PROJECT_EXISTS"
+    assert (root / "one.md").read_text(encoding="utf-8") == "one"
+    assert (root / "Two.md").read_text(encoding="utf-8") == "two"
+
+
+def test_project_rename_response_recomputes_blocked_state(client):
+    client.patch("/api/tasks/api003", json={"depends_on": ["api001"]})
+
+    response = client.patch(_project_url("p.md"), json={"name": "renamed"})
+
+    latest = {task["id"]: task for task in response.json()["latest_tasks"]}
+    assert latest["api003"]["blocked"] is True
+
+
+def test_project_delete_moves_to_trash_and_cleans_dependencies_and_today(client):
+    root = client.vault_root
+    (root / "projects").mkdir()
+    source = root / "projects" / "doomed.md"
+    original = "- [ ] Parent 🆔 gone01\n    - [ ] Child 🆔 gone02\n"
+    source.write_text(original, encoding="utf-8")
+    client.patch("/api/tasks/api003", json={"depends_on": ["gone01", "gone02"]})
+    for date in ["2026-08-02", "2026-08-03"]:
+        client.put("/api/today", json={"date": date, "task_ids": ["gone01", "api003"]})
+
+    response = client.delete(_project_url("projects/doomed.md"))
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["deleted"] == "projects/doomed.md"
+    assert result["removed_task_ids"] == ["gone01", "gone02"]
+    assert result["trashed_to"].startswith(".trash/mdtask-projects/")
+    assert not source.exists()
+    assert (root / result["trashed_to"]).read_text(encoding="utf-8") == original
+    task = next(
+        task
+        for task in client.get("/api/tasks").json()["files"]["p.md"]
+        if task["id"] == "api003"
+    )
+    assert task["depends_on"] == []
+    for date in ["2026-08-02", "2026-08-03"]:
+        ids = [item["id"] for item in client.get("/api/today", params={"date": date}).json()["items"]]
+        assert ids == ["api003"]
+
+
+def test_project_delete_keeps_existing_trash_copy(client):
+    root = client.vault_root
+    projects = root / "projects"
+    projects.mkdir()
+    source = projects / "repeat.md"
+    source.write_text("first", encoding="utf-8")
+    first = client.delete(_project_url("projects/repeat.md")).json()
+    source.write_text("second", encoding="utf-8")
+
+    second = client.delete(_project_url("projects/repeat.md")).json()
+
+    assert first["trashed_to"] != second["trashed_to"]
+    assert (root / first["trashed_to"]).read_text(encoding="utf-8") == "first"
+    assert (root / second["trashed_to"]).read_text(encoding="utf-8") == "second"
+
+
+def test_project_delete_does_not_purge_id_reowned_after_deduplication(client):
+    root = client.vault_root
+    (root / "a-doomed.md").write_text("- [ ] Old owner 🆔 dup001\n", encoding="utf-8")
+    (root / "z-survivor.md").write_text("- [ ] New owner 🆔 dup001\n", encoding="utf-8")
+    client.patch("/api/tasks/api003", json={"depends_on": ["dup001"]})
+    client.put("/api/today", json={"date": "2026-08-03", "task_ids": ["dup001"]})
+
+    result = client.delete(_project_url("a-doomed.md")).json()
+
+    assert result["removed_task_ids"] == []
+    survivor = client.get("/api/tasks").json()["files"]["z-survivor.md"][0]
+    assert survivor["id"] == "dup001"
+    api003 = next(
+        task
+        for task in client.get("/api/tasks").json()["files"]["p.md"]
+        if task["id"] == "api003"
+    )
+    assert api003["depends_on"] == ["dup001"]
+    items = client.get("/api/today", params={"date": "2026-08-03"}).json()["items"]
+    assert [item["id"] for item in items] == ["dup001"]
 
 
 def test_prose_preserved_after_edits(client):

@@ -2,7 +2,9 @@ import { useEffect } from 'react'
 import { connectWs } from './api'
 import { AllTasksView } from './components/AllTasksView'
 import { DetailPanel } from './components/DetailPanel'
+import { DashboardView } from './components/DashboardView'
 import { FileView } from './components/FileView'
+import { ProjectManagementView } from './components/ProjectManagementView'
 import { QuickAdd } from './components/QuickAdd'
 import { Sidebar } from './components/Sidebar'
 import { TodayView } from './components/TodayView'
@@ -25,6 +27,10 @@ export default function App() {
       <main className="flex-1 overflow-hidden bg-white">
         {loading ? (
           <div className="mt-24 text-center text-sm text-neutral-400">加载中…</div>
+        ) : view.kind === 'dashboard' ? (
+          <DashboardView />
+        ) : view.kind === 'projects' ? (
+          <ProjectManagementView />
         ) : view.kind === 'today' ? (
           <TodayView />
         ) : view.kind === 'all' ? (

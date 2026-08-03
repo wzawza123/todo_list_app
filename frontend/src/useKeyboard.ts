@@ -18,12 +18,15 @@ export function useKeyboard() {
     const onKey = async (e: KeyboardEvent) => {
       const s = useStore.getState()
       if (s.quickAdd) return
+      if (document.querySelector('[aria-modal="true"]')) return
       if (isTyping(e.target)) return
 
-      // leader: G T / G I / G A
+      // leader: G D / G P / G T / G I / G A
       if (leader.current) {
         leader.current = false
         const map: Record<string, () => void> = {
+          d: () => s.setView({ kind: 'dashboard' }),
+          p: () => s.setView({ kind: 'projects' }),
           t: () => s.setView({ kind: 'today' }),
           i: () => s.setView({ kind: 'inbox' }),
           a: () => s.setView({ kind: 'all' }),

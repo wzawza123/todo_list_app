@@ -1,8 +1,8 @@
 import { create } from 'zustand'
 import { ApiError, api } from './api'
-import type { FileInfo, Priority, Snapshot, Task, TodayPayload } from './types'
+import type { FileInfo, Priority, ProjectDeleteResult, ProjectSummary, Snapshot, Task, TodayPayload } from './types'
 
-export type ViewKind = 'today' | 'inbox' | 'all' | 'file'
+export type ViewKind = 'dashboard' | 'projects' | 'today' | 'inbox' | 'all' | 'file'
 export interface View {
   kind: ViewKind
   file?: string
@@ -39,6 +39,7 @@ export function flatten(tasks: Task[], out: Task[] = []): Task[] {
 interface State {
   snapshot: Snapshot
   files: FileInfo[]
+  projects: ProjectSummary[]
   inbox: string
   today: TodayPayload | null
   view: View
@@ -64,6 +65,9 @@ interface State {
   taskById: (id: string) => Task | undefined
   todayIds: () => Set<string>
 
+  createProject: (name: string) => Promise<ProjectSummary | null>
+  renameProject: (path: string, name: string) => Promise<ProjectSummary | null>
+  deleteProject: (path: string) => Promise<ProjectDeleteResult | null>
   createTask: (body: Parameters<typeof api.createTask>[0]) => Promise<Task | null>
   patchTask: (id: string, patch: Parameters<typeof api.patchTask>[1]) => Promise<Task | null>
   deleteTask: (id: string) => Promise<void>
@@ -77,13 +81,15 @@ interface State {
 }
 
 let toastSeq = 0
+let refreshSeq = 0
 
 export const useStore = create<State>((set, get) => ({
   snapshot: { files: {}, warnings: [] },
   files: [],
+  projects: [],
   inbox: 'Inbox.md',
   today: null,
-  view: { kind: 'today' },
+  view: { kind: 'dashboard' },
   selected: null,
   detailOpen: false,
   quickAdd: false,
@@ -110,21 +116,29 @@ export const useStore = create<State>((set, get) => ({
   },
 
   refresh: async () => {
+    const requestId = ++refreshSeq
     const result = await get().run(async () => {
-      const [snapshot, files, today] = await Promise.all([api.tasks(), api.files(), api.today()])
-      return { snapshot, files, today }
+      const [snapshot, files, projects, today] = await Promise.all([
+        api.tasks(),
+        api.files(),
+        api.projects(),
+        api.today(),
+      ])
+      return { snapshot, files, projects, today }
     })
+    if (requestId !== refreshSeq) return
     if (!result) return set({ loading: false })
     set({
       snapshot: result.snapshot,
       files: result.files.files,
+      projects: result.projects.projects,
       inbox: result.files.inbox,
       today: result.today,
       loading: false,
     })
   },
 
-  setView: (view) => set({ view, selected: null }),
+  setView: (view) => set({ view, selected: null, detailOpen: false }),
   select: (key) => set({ selected: key }),
 
   toggleCollapse: (key) =>
@@ -141,6 +155,36 @@ export const useStore = create<State>((set, get) => ({
   allTasks: () => flatten(Object.values(get().snapshot.files).flat()),
   taskById: (id) => get().allTasks().find((t) => t.id === id),
   todayIds: () => new Set((get().today?.items ?? []).map((i) => i.id)),
+
+  createProject: async (name) => {
+    const project = await get().run(() => api.createProject(name))
+    if (project) await get().refresh()
+    return project
+  },
+
+  renameProject: async (path, name) => {
+    const project = await get().run(() => api.renameProject(path, name))
+    if (project) {
+      const currentView = get().view
+      if (currentView.kind === 'file' && currentView.file === path) {
+        set({ view: { kind: 'file', file: project.path } })
+      }
+      await get().refresh()
+    }
+    return project
+  },
+
+  deleteProject: async (path) => {
+    const result = await get().run(() => api.deleteProject(path))
+    if (result) {
+      const currentView = get().view
+      if (currentView.kind === 'file' && currentView.file === path) {
+        set({ view: { kind: 'projects' }, selected: null, detailOpen: false })
+      }
+      await get().refresh()
+    }
+    return result
+  },
 
   createTask: async (body) => {
     const task = await get().run(() => api.createTask(body))

@@ -1,4 +1,13 @@
-import type { FileInfo, Priority, Snapshot, Task, TodayPayload } from './types'
+import type {
+  FileInfo,
+  Priority,
+  ProjectDeleteResult,
+  ProjectSummary,
+  ProjectsPayload,
+  Snapshot,
+  Task,
+  TodayPayload,
+} from './types'
 
 export class ApiError extends Error {
   code: string
@@ -28,9 +37,24 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>
 }
 
+function projectUrl(path: string): string {
+  const encodedPath = path
+    .replace(/\\/g, '/')
+    .split('/')
+    .map((segment) => encodeURIComponent(segment))
+    .join('/')
+  return `/api/projects/${encodedPath}`
+}
+
 export const api = {
   tasks: () => request<Snapshot>('/api/tasks'),
   files: () => request<{ files: FileInfo[]; inbox: string }>('/api/files'),
+  projects: () => request<ProjectsPayload>('/api/projects'),
+  createProject: (name: string) =>
+    request<ProjectSummary>('/api/projects', { method: 'POST', body: JSON.stringify({ name }) }),
+  renameProject: (path: string, name: string) =>
+    request<ProjectSummary>(projectUrl(path), { method: 'PATCH', body: JSON.stringify({ name }) }),
+  deleteProject: (path: string) => request<ProjectDeleteResult>(projectUrl(path), { method: 'DELETE' }),
 
   createTask: (body: {
     title: string

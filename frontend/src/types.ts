@@ -29,6 +29,25 @@ export interface FileInfo {
   open: number
 }
 
+export interface ProjectSummary {
+  path: string
+  name: string
+  total_tasks: number
+  completed_tasks: number
+  progress: number
+  latest_tasks: Task[]
+}
+
+export interface ProjectsPayload {
+  projects: ProjectSummary[]
+}
+
+export interface ProjectDeleteResult {
+  deleted: string
+  trashed_to: string
+  removed_task_ids: string[]
+}
+
 export interface TodayItem {
   id: string
   task: Task | null
