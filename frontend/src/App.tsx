@@ -36,7 +36,7 @@ export default function App() {
         ) : view.kind === 'all' ? (
           <AllTasksView />
         ) : view.kind === 'inbox' ? (
-          <FileView path={inbox} title="📥 Inbox" />
+          <FileView path={inbox} title="📥 Inbox" allowMoveToProject />
         ) : (
           <FileView path={view.file!} title={view.file!} />
         )}

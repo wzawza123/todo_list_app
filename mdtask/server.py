@@ -62,7 +62,8 @@ class IndentBody(BaseModel):
 
 
 class MoveBody(BaseModel):
-    parent_id: str
+    parent_id: Optional[str] = None
+    project_path: Optional[str] = None
 
 
 class TodayBody(BaseModel):
@@ -155,7 +156,7 @@ def create_app(vault_path: Path, serve_static: bool = True, watch: bool = True) 
 
     @app.post("/api/tasks/{task_id}/move")
     def move_task(task_id: str, body: MoveBody):
-        task = vault.move_task(task_id, body.parent_id)
+        task = vault.move_task(task_id, parent_id=body.parent_id, project_path=body.project_path)
         changed()
         return task.to_dict()
 

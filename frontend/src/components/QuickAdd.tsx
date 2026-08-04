@@ -160,7 +160,7 @@ export function QuickAdd() {
             >
               <Swatch p={priority} className="h-3 w-[3px]" />
               {PRIORITY_LABEL[priority]}
-              <span className="text-[10px] text-neutral-400">▾</span>
+              <span className="text-[12px] text-neutral-400">▾</span>
             </button>
 
             {menuOpen && (
@@ -184,7 +184,7 @@ export function QuickAdd() {
                   >
                     <Swatch p={p} className="h-3 w-[3px]" />
                     <span className="flex-1">{PRIORITY_LABEL[p]}</span>
-                    <span className="text-[10px] text-neutral-400">{p === 'none' ? 0 : i + 1}</span>
+                    <span className="text-[12px] text-neutral-400">{p === 'none' ? 0 : i + 1}</span>
                   </div>
                 ))}
               </div>
@@ -192,9 +192,9 @@ export function QuickAdd() {
           </div>
         </div>
 
-        <div className="flex items-center justify-between border-t border-neutral-100 px-4 py-1.5 text-xs text-neutral-400">
-          <span>→ {targetFile}</span>
-          <span>
+        <div className="flex items-center justify-between gap-3 border-t border-neutral-100 px-4 py-1.5 text-xs text-neutral-400">
+          <span className="min-w-0 flex-1 truncate" title={targetFile}>→ {targetFile}</span>
+          <span className="shrink-0 whitespace-nowrap">
             <kbd>Enter</kbd> 提交并继续 · <kbd>Alt+P</kbd> 优先级（<kbd>1</kbd>–<kbd>4</kbd>）· <kbd>Esc</kbd> 关闭
           </span>
         </div>

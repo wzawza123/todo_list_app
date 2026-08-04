@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { useStore } from '../store'
 import type { Task } from '../types'
 import { TaskRow, type RowDnd } from './TaskRow'
@@ -9,6 +10,7 @@ export function TaskTree({
   hideBlocked = false,
   depth = 0,
   dndFor,
+  renderEndAction,
 }: {
   tasks: Task[]
   showFile?: boolean
@@ -16,6 +18,7 @@ export function TaskTree({
   hideBlocked?: boolean
   depth?: number
   dndFor?: (task: Task) => RowDnd | undefined
+  renderEndAction?: (task: Task) => ReactNode
 }) {
   const collapsed = useStore((s) => s.collapsed)
   return (
@@ -30,12 +33,19 @@ export function TaskTree({
             hideBlocked={hideBlocked}
             depth={selfHidden ? depth : depth + 1}
             dndFor={dndFor}
+            renderEndAction={renderEndAction}
           />
         )
         if (selfHidden) return <div key={task.key}>{kids}</div>
         return (
           <div key={task.key}>
-            <TaskRow task={task} indent={depth} showFile={showFile} dnd={dndFor?.(task)} />
+            <TaskRow
+              task={task}
+              indent={depth}
+              showFile={showFile}
+              dnd={dndFor?.(task)}
+              endAction={renderEndAction?.(task)}
+            />
             {!collapsed.has(task.key) && kids}
           </div>
         )

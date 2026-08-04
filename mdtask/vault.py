@@ -730,17 +730,32 @@ class Vault:
             self.write_doc(doc)
             return next(t for t in doc.tasks if t.id == task_id)
 
-    def move_task(self, task_id: str, parent_id: str) -> Task:
-        """Re-parent a task (with its subtree) as the last child of parent_id.
+    def move_task(
+        self,
+        task_id: str,
+        parent_id: Optional[str] = None,
+        project_path: Optional[str] = None,
+    ) -> Task:
+        """Move a task subtree below a parent or to a project's root.
 
-        Works across files — 🆔 are vault-wide, so dependencies and Today
-        references keep pointing at the same tasks after the move.
+        Exactly one destination must be supplied. ``parent_id`` keeps the
+        drag-and-drop behaviour; ``project_path`` appends the subtree to that
+        project as a root task. IDs are vault-wide, so dependencies and Today
+        references keep pointing at the same tasks after either move.
         """
         with self.lock:
+            if (parent_id is None) == (project_path is None):
+                raise VaultError("BAD_REQUEST", "必须且只能指定 parent_id 或 project_path")
+
+            self.refresh_if_stale()
             if parent_id == task_id:
                 raise VaultError("BAD_TARGET", "不能把任务拖到它自己上")
             src, _ = self.find(task_id)
-            dst, _ = self.find(parent_id)
+            if parent_id is not None:
+                dst, _ = self.find(parent_id)
+            else:
+                target_rel = self._resolve_project_rel(project_path or "")
+                dst = self.ensure_fresh(target_rel)
             same_file = src.rel == dst.rel
 
             doc = self.ensure_fresh(src.rel)
@@ -749,14 +764,18 @@ class Vault:
                 raise VaultError("NOT_FOUND", f"找不到任务 {task_id}")
             start, end = self._subtree_span(doc, task)
             subtree = [t for t in doc.tasks if start <= t.line < end]
-            if any(t.id == parent_id for t in subtree):
+            if parent_id is not None and any(t.id == parent_id for t in subtree):
                 raise VaultError("BAD_TARGET", "不能把任务拖到它自己的子任务上")
 
             pdoc = doc if same_file else self.ensure_fresh(dst.rel)
-            parent = next((t for t in pdoc.tasks if t.id == parent_id), None)
-            if parent is None:
-                raise VaultError("NOT_FOUND", f"找不到任务 {parent_id}")
-            delta = parent.level + 1 - task.level
+            if parent_id is not None:
+                parent = next((t for t in pdoc.tasks if t.id == parent_id), None)
+                if parent is None:
+                    raise VaultError("NOT_FOUND", f"找不到任务 {parent_id}")
+                target_level = parent.level + 1
+            else:
+                target_level = 1
+            delta = target_level - task.level
             if max(t.level for t in subtree) + delta > MAX_LEVEL:
                 raise VaultError("MAX_DEPTH", "已达到 4 级嵌套上限")
 
@@ -780,8 +799,11 @@ class Vault:
             if not same_file:
                 self.write_doc(doc)
 
-            parent = next(t for t in pdoc.tasks if t.id == parent_id)
-            _, insert_at = self._subtree_span(pdoc, parent)
+            if parent_id is not None:
+                parent = next(t for t in pdoc.tasks if t.id == parent_id)
+                _, insert_at = self._subtree_span(pdoc, parent)
+            else:
+                insert_at = len(pdoc.lines)
             peol = pdoc.eol
             if peol != eol:
                 seg = [ln[: -len(eol)] + peol for ln in seg]

@@ -114,7 +114,7 @@ export function ProjectManagementView() {
         </form>
 
         <section className="overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm" aria-label="项目列表">
-          <div className="grid grid-cols-[minmax(200px,1.6fr)_minmax(150px,1fr)_100px_minmax(140px,1fr)_190px] gap-4 border-b border-neutral-200 bg-neutral-50 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">
+          <div className="grid grid-cols-[minmax(200px,1.6fr)_minmax(150px,1fr)_100px_minmax(140px,1fr)_190px] gap-4 border-b border-neutral-200 bg-neutral-50 px-4 py-2.5 text-[13px] font-semibold uppercase tracking-wide text-neutral-400">
             <span>项目</span>
             <span>进度</span>
             <span>任务</span>
@@ -188,7 +188,13 @@ function ProjectRow({
   const latestTask = project.latest_tasks[0]
 
   return (
-    <div className="grid min-h-[76px] grid-cols-[minmax(200px,1.6fr)_minmax(150px,1fr)_100px_minmax(140px,1fr)_190px] items-center gap-4 border-b border-neutral-100 px-4 py-3 last:border-b-0 hover:bg-neutral-50/70">
+    <div
+      onClick={(event) => {
+        if ((event.target as HTMLElement).closest('button, input, form')) return
+        onOpen()
+      }}
+      className="grid min-h-[76px] cursor-pointer grid-cols-[minmax(200px,1.6fr)_minmax(150px,1fr)_100px_minmax(140px,1fr)_190px] items-center gap-4 border-b border-neutral-100 px-4 py-3 last:border-b-0 hover:bg-neutral-50/70"
+    >
       <div className="flex min-w-0 items-center gap-3">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-blue-50 text-sm font-semibold text-blue-600">
           {projectInitial(project.name)}
@@ -222,7 +228,7 @@ function ProjectRow({
             <button type="button" onClick={onOpen} className="block max-w-full truncate text-left text-sm font-semibold text-neutral-800 hover:text-blue-600">
               {project.name}
             </button>
-            <p className="mt-0.5 truncate text-[11px] text-neutral-400" title={project.path}>
+            <p className="mt-0.5 truncate text-[13px] text-neutral-400" title={project.path}>
               {project.path}
             </p>
           </div>
@@ -230,7 +236,7 @@ function ProjectRow({
       </div>
 
       <div>
-        <div className="mb-1.5 flex items-center justify-between text-[11px]">
+        <div className="mb-1.5 flex items-center justify-between text-[13px]">
           <span className="text-neutral-400">完成进度</span>
           <span className="font-semibold tabular-nums text-blue-600">{progress}%</span>
         </div>
@@ -241,7 +247,7 @@ function ProjectRow({
 
       <div className="text-xs tabular-nums">
         <div className="font-medium text-neutral-700">{project.completed_tasks} / {project.total_tasks}</div>
-        <div className="mt-0.5 text-[11px] text-neutral-400">{openTasks === 0 ? '全部完成' : `${openTasks} 项待办`}</div>
+        <div className="mt-0.5 text-[13px] text-neutral-400">{openTasks === 0 ? '全部完成' : `${openTasks} 项待办`}</div>
       </div>
 
       <div className="min-w-0">
@@ -250,7 +256,7 @@ function ProjectRow({
             <p className={`truncate text-xs ${latestTask.status === 'done' ? 'text-neutral-400 line-through' : 'text-neutral-600'}`} title={latestTask.title}>
               {latestTask.title}
             </p>
-            <p className="mt-0.5 text-[11px] text-neutral-400">{latestTask.status === 'done' ? '已完成' : latestTask.blocked ? '已阻塞' : '进行中'}</p>
+            <p className="mt-0.5 text-[13px] text-neutral-400">{latestTask.status === 'done' ? '已完成' : latestTask.blocked ? '已阻塞' : '进行中'}</p>
           </>
         ) : (
           <span className="text-xs text-neutral-300">暂无任务</span>
@@ -258,7 +264,6 @@ function ProjectRow({
       </div>
 
       <div className="flex items-center justify-end gap-1">
-        <ActionButton onClick={onOpen}>打开</ActionButton>
         <ActionButton onClick={onRenameStart} disabled={editing}>重命名</ActionButton>
         <ActionButton onClick={onDelete} danger>删除</ActionButton>
       </div>
@@ -312,7 +317,7 @@ function DeleteProjectDialog({ project, deleting, onCancel, onConfirm }: { proje
 function SummaryStat({ label, value, accent = false }: { label: string; value: string | number; accent?: boolean }) {
   return (
     <div>
-      <div className="text-[11px] text-neutral-400">{label}</div>
+      <div className="text-[13px] text-neutral-400">{label}</div>
       <div className={`mt-0.5 text-sm font-semibold tabular-nums ${accent ? 'text-blue-600' : 'text-neutral-700'}`}>{value}</div>
     </div>
   )

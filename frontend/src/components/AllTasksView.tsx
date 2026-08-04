@@ -22,9 +22,9 @@ export function AllTasksView() {
   return (
     <div className="flex h-full flex-col">
       <header className="flex items-center gap-3 border-b border-neutral-200 px-4 py-2">
-        <h1 className="text-sm font-semibold">📋 All Tasks</h1>
-        <span className="text-xs text-neutral-300">拖到另一条任务上 = 成为它的子任务（可跨文件）</span>
-        <div className="ml-auto flex items-center gap-3 text-xs text-neutral-600">
+        <h1 className="shrink-0 text-sm font-semibold">📋 All Tasks</h1>
+        <span className="min-w-0 truncate text-xs text-neutral-300">拖到另一条任务上 = 成为它的子任务（可跨文件）</span>
+        <div className="ml-auto flex shrink-0 items-center gap-3 whitespace-nowrap text-xs text-neutral-600">
           <input
             value={filter}
             onChange={(e) => setFilter(e.target.value)}

@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import {
   DndContext,
   KeyboardSensor,
@@ -14,6 +15,7 @@ import { useStore } from '../store'
 import { useTaskDnd } from '../useTaskDnd'
 import type { TodayItem } from '../types'
 import { TaskRow, type RowDnd } from './TaskRow'
+import { groupTodayItems, reorderTodayGroup, todayGroupKey, type TodayGroup } from './todayGrouping'
 
 export function TodayView() {
   const { today, reorderToday, cleanToday, carryOver, dismissCarryOver, carryOverPrompted } = useStore()
@@ -25,18 +27,20 @@ export function TodayView() {
 
   if (!today) return null
   const items = today.items
-  const stale = items.filter((i) => i.stale)
+  const groups = groupTodayItems(items)
+  const stale = items.filter((item) => item.stale || !item.task)
   const pending = today.carry_over ?? []
 
   const onDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
     if (!over || active.id === over.id) return
-    const ids = items.map((i) => i.id)
-    const from = ids.indexOf(String(active.id))
-    const to = ids.indexOf(String(over.id))
-    if (from < 0 || to < 0) return
-    const next = [...ids]
-    next.splice(to, 0, next.splice(from, 1)[0])
+    // A websocket refresh or task edit may land while dragging. Persist against
+    // the latest schedule so we never overwrite those newer changes.
+    const latestItems = useStore.getState().today?.items ?? []
+    const activeItem = latestItems.find((item) => item.id === String(active.id))
+    if (!activeItem) return
+    const next = reorderTodayGroup(latestItems, todayGroupKey(activeItem), String(active.id), String(over.id))
+    if (!next) return
     reorderToday(next)
   }
 
@@ -80,15 +84,80 @@ export function TodayView() {
             onDragEnd={onDragEnd}
             modifiers={[restrictToVerticalAxis]}
           >
-            <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
-              {items.map((item) => (
-                <SortableRow key={item.id} item={item} dnd={item.task ? dndFor(item.task) : undefined} />
+            <div className="space-y-3">
+              {groups.map((group) => (
+                <TodayGroupSection
+                  key={group.key === null ? 'stale:' : `file:${group.key}`}
+                  group={group}
+                  dndFor={dndFor}
+                />
               ))}
-            </SortableContext>
+            </div>
           </DndContext>
         )}
       </div>
     </div>
+  )
+}
+
+function TodayGroupSection({
+  group,
+  dndFor,
+}: {
+  group: TodayGroup
+  dndFor: (task: NonNullable<TodayItem['task']>) => RowDnd
+}) {
+  const headingId = useId()
+
+  return (
+    <section className="overflow-hidden rounded-lg border border-neutral-200 bg-white" aria-labelledby={headingId}>
+      <div className="flex items-center gap-3 border-b border-neutral-100 bg-neutral-50/80 px-3 py-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <h2 id={headingId} className="truncate text-xs font-semibold text-neutral-700">
+              {group.title}
+            </h2>
+            {group.stale && (
+              <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[12px] font-medium text-amber-700">需清理</span>
+            )}
+          </div>
+          {group.path && (
+            <p className="mt-0.5 truncate text-[12px] text-neutral-400" title={group.path}>
+              {group.path}
+            </p>
+          )}
+        </div>
+
+        {group.stale ? (
+          <span className="shrink-0 text-[12px] tabular-nums text-neutral-400">{group.total} 条引用</span>
+        ) : (
+          <div className="w-28 shrink-0">
+            <div className="mb-1 flex items-center justify-between text-[12px] tabular-nums text-neutral-400">
+              <span>完成</span>
+              <span>{group.done} / {group.total}</span>
+            </div>
+            <div
+              className="h-1 overflow-hidden rounded-full bg-neutral-200"
+              role="progressbar"
+              aria-label={`${group.title} 完成进度`}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={group.progress}
+            >
+              <div className="h-full rounded-full bg-blue-500" style={{ width: `${group.progress}%` }} />
+            </div>
+          </div>
+        )}
+      </div>
+
+      <SortableContext items={group.items.map((item) => item.id)} strategy={verticalListSortingStrategy}>
+        <div className="py-1">
+          {group.items.map((item) => (
+            <SortableRow key={item.id} item={item} dnd={item.task ? dndFor(item.task) : undefined} />
+          ))}
+        </div>
+      </SortableContext>
+    </section>
   )
 }
 
@@ -97,7 +166,7 @@ function SortableRow({ item, dnd }: { item: TodayItem; dnd?: RowDnd }) {
   const toggleToday = useStore((s) => s.toggleToday)
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }
 
-  const handle = (
+  const handle = !item.stale && item.task ? (
     <span
       {...attributes}
       {...listeners}
@@ -107,12 +176,13 @@ function SortableRow({ item, dnd }: { item: TodayItem; dnd?: RowDnd }) {
         e.preventDefault()
         e.stopPropagation()
       }}
-      className="shrink-0 cursor-grab select-none px-0.5 text-xs text-neutral-300 hover:text-neutral-500"
-      title="拖拽排序（拖整行则是变成子任务）"
+      aria-label="调整该任务在当前项目内的 Today 顺序"
+      className="shrink-0 cursor-grab select-none rounded px-0.5 text-xs text-neutral-300 hover:text-neutral-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+      title="仅调整同项目内的 Today 顺序；拖整行可跨项目变成子任务"
     >
       ⠿
     </span>
-  )
+  ) : null
 
   if (item.stale || !item.task) {
     return (
@@ -128,7 +198,7 @@ function SortableRow({ item, dnd }: { item: TodayItem; dnd?: RowDnd }) {
 
   return (
     <div ref={setNodeRef} style={style}>
-      <TaskRow task={item.task} showFile dragHandle={handle} dnd={dnd} />
+      <TaskRow task={item.task} dragHandle={handle} dnd={dnd} />
     </div>
   )
 }

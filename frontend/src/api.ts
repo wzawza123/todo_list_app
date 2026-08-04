@@ -72,6 +72,9 @@ export const api = {
   moveTask: (id: string, parent_id: string) =>
     request<Task>(`/api/tasks/${id}/move`, { method: 'POST', body: JSON.stringify({ parent_id }) }),
 
+  moveTaskToProject: (id: string, project_path: string) =>
+    request<Task>(`/api/tasks/${id}/move`, { method: 'POST', body: JSON.stringify({ project_path }) }),
+
   indent: (id: string, direction: 'in' | 'out') =>
     request<Task>(`/api/tasks/${id}/indent`, { method: 'POST', body: JSON.stringify({ direction }) }),
 

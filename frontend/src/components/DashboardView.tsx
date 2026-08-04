@@ -74,7 +74,7 @@ export function DashboardView() {
 function SummaryStat({ label, value, accent = false }: { label: string; value: string | number; accent?: boolean }) {
   return (
     <div>
-      <div className="text-[11px] text-neutral-400">{label}</div>
+      <div className="text-[13px] text-neutral-400">{label}</div>
       <div className={`mt-0.5 text-sm font-semibold tabular-nums ${accent ? 'text-blue-600' : 'text-neutral-700'}`}>
         {value}
       </div>
@@ -109,7 +109,7 @@ function ProjectCard({ project, onOpen }: { project: ProjectSummary; onOpen: () 
             <h2 className="truncate text-sm font-semibold text-neutral-800">{project.name}</h2>
             <span className="ml-auto shrink-0 text-neutral-300 transition group-hover:translate-x-0.5 group-hover:text-neutral-500">→</span>
           </div>
-          <p className="mt-0.5 truncate text-[11px] text-neutral-400" title={project.path}>
+          <p className="mt-0.5 truncate text-[13px] text-neutral-400" title={project.path}>
             {project.path}
           </p>
         </div>
@@ -134,13 +134,13 @@ function ProjectCard({ project, onOpen }: { project: ProjectSummary; onOpen: () 
         >
           <div className="h-full rounded-full bg-blue-500 transition-[width]" style={{ width: `${progress}%` }} />
         </div>
-        <p className="mt-1.5 text-[11px] text-neutral-400">{openTasks === 0 ? '所有任务均已完成' : `还有 ${openTasks} 项待完成`}</p>
+        <p className="mt-1.5 text-[13px] text-neutral-400">{openTasks === 0 ? '所有任务均已完成' : `还有 ${openTasks} 项待完成`}</p>
       </div>
 
       <div className="mt-4 border-t border-neutral-100 pt-3">
         <div className="mb-1.5 flex items-center justify-between">
-          <h3 className="text-[11px] font-medium uppercase tracking-wide text-neutral-400">最新任务</h3>
-          <span className="text-[11px] text-neutral-300">最近 {Math.min(project.latest_tasks.length, 3)} 项</span>
+          <h3 className="text-[13px] font-medium uppercase tracking-wide text-neutral-400">最新任务</h3>
+          <span className="text-[13px] text-neutral-300">最近 {Math.min(project.latest_tasks.length, 3)} 项</span>
         </div>
         {project.latest_tasks.length === 0 ? (
           <p className="py-2 text-xs text-neutral-400">暂无任务</p>
@@ -173,7 +173,7 @@ function LatestTask({ task }: { task: Task }) {
         aria-hidden="true"
       />
       <span className={`truncate ${task.status === 'done' ? 'text-neutral-400 line-through' : ''}`}>{task.title}</span>
-      {task.blocked && <span className="ml-auto shrink-0 text-[10px] text-amber-600">阻塞</span>}
+      {task.blocked && <span className="ml-auto shrink-0 text-[12px] text-amber-600">阻塞</span>}
     </div>
   )
 }

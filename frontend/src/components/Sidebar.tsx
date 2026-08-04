@@ -41,7 +41,7 @@ export function Sidebar() {
         ),
       )}
 
-      <div className="mt-auto space-y-1 px-2 pt-4 text-[11px] leading-4 text-neutral-400">
+      <div className="mt-auto space-y-1 px-2 pt-4 text-[13px] leading-4 text-neutral-400">
         {snapshot.warnings.length > 0 && (
           <div className="rounded bg-amber-50 p-1.5 text-amber-700">
             {snapshot.warnings.length} 条解析警告

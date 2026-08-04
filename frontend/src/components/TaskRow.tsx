@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useStore } from '../store'
 import type { Task } from '../types'
 import { PriorityBar } from './PriorityBar'
@@ -22,9 +22,10 @@ interface Props {
   dragHandle?: React.ReactNode
   stale?: boolean
   dnd?: RowDnd
+  endAction?: ReactNode
 }
 
-export function TaskRow({ task, indent = 0, showFile = false, dragHandle, dnd }: Props) {
+export function TaskRow({ task, indent = 0, showFile = false, dragHandle, dnd, endAction }: Props) {
   const { selected, select, patchTask, toggleToday, todayIds, toggleCollapse, collapsed, setDetailOpen, taskById } =
     useStore()
   const [editing, setEditing] = useState(false)
@@ -99,7 +100,7 @@ export function TaskRow({ task, indent = 0, showFile = false, dragHandle, dnd }:
           e.stopPropagation()
           if (hasChildren) toggleCollapse(task.key)
         }}
-        className={`w-3 shrink-0 text-[10px] text-neutral-400 ${hasChildren ? '' : 'invisible'}`}
+        className={`w-3 shrink-0 text-[12px] text-neutral-400 ${hasChildren ? '' : 'invisible'}`}
       >
         {isCollapsed ? '▶' : '▼'}
       </button>
@@ -163,6 +164,8 @@ export function TaskRow({ task, indent = 0, showFile = false, dragHandle, dnd }:
       {showFile && <span className="shrink-0 max-w-[180px] truncate text-xs text-neutral-400">{task.file}</span>}
 
       {!task.id && <span className="shrink-0 text-xs text-neutral-300" title="尚未写入 🆔，修改时会自动补写">·</span>}
+
+      {endAction}
 
       <button
         onClick={(e) => {

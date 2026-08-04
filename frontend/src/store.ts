@@ -73,6 +73,7 @@ interface State {
   deleteTask: (id: string) => Promise<void>
   indent: (id: string, direction: 'in' | 'out') => Promise<void>
   moveTask: (id: string, parentId: string) => Promise<void>
+  moveTaskToProject: (id: string, projectPath: string) => Promise<Task | null>
   toggleToday: (id: string) => Promise<void>
   reorderToday: (ids: string[]) => Promise<void>
   carryOver: () => Promise<void>
@@ -226,6 +227,15 @@ export const useStore = create<State>((set, get) => ({
       })
       await get().refresh()
     }
+  },
+
+  moveTaskToProject: async (id, projectPath) => {
+    const task = await get().run(() => api.moveTaskToProject(id, projectPath))
+    if (task) {
+      set({ selected: null, detailOpen: false })
+      await get().refresh()
+    }
+    return task
   },
 
   toggleToday: async (id) => {

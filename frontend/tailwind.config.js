@@ -12,8 +12,8 @@ export default {
         },
       },
       fontSize: {
-        xs: ['12px', '16px'],
-        sm: ['13px', '18px'],
+        xs: ['14px', '20px'],
+        sm: ['15px', '22px'],
       },
     },
   },

@@ -140,7 +140,7 @@ export function DetailPanel() {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-neutral-400">{label}</div>
+      <div className="mb-1 text-[13px] font-medium uppercase tracking-wide text-neutral-400">{label}</div>
       {children}
     </div>
   )

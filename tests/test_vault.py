@@ -378,3 +378,44 @@ def test_move_across_files_into_empty_file(tmp_path):
     assert (tmp_path / "dst.md").read_text(encoding="utf-8") == (
         "# 只有标题\n- [ ] D 🆔 sss002\n    - [ ] A 🆔 sss001\n"
     )
+
+
+def test_move_to_project_root_keeps_subtree_and_normalizes_levels(tmp_path):
+    (tmp_path / "Inbox.md").write_text(
+        "- [ ] 留在 Inbox 🆔 box001\n"
+        "    - [ ] 移动我 🆔 mov001\n"
+        "        - [ ] 连同子任务 🆔 kid001\n"
+        "- [ ] Inbox 尾项 🆔 box002\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "projects").mkdir()
+    (tmp_path / "projects" / "release.md").write_text(
+        "# Release\n- [ ] 已有任务 🆔 dst001", encoding="utf-8"
+    )
+    v = Vault(tmp_path)
+
+    moved = v.move_task("mov001", project_path="projects/release.md")
+
+    assert moved.file == "projects/release.md"
+    assert moved.level == 1
+    assert (tmp_path / "Inbox.md").read_text(encoding="utf-8") == (
+        "- [ ] 留在 Inbox 🆔 box001\n- [ ] Inbox 尾项 🆔 box002\n"
+    )
+    assert (tmp_path / "projects" / "release.md").read_text(encoding="utf-8") == (
+        "# Release\n"
+        "- [ ] 已有任务 🆔 dst001\n"
+        "- [ ] 移动我 🆔 mov001\n"
+        "    - [ ] 连同子任务 🆔 kid001\n"
+    )
+
+
+def test_move_to_project_rejects_non_project_target(tmp_path):
+    (tmp_path / "Inbox.md").write_text("- [ ] A 🆔 src001\n", encoding="utf-8")
+    v = Vault(tmp_path)
+    before = (tmp_path / "Inbox.md").read_text(encoding="utf-8")
+
+    with pytest.raises(VaultError) as exc:
+        v.move_task("src001", project_path="Inbox.md")
+
+    assert exc.value.code == "BAD_PROJECT_PATH"
+    assert (tmp_path / "Inbox.md").read_text(encoding="utf-8") == before

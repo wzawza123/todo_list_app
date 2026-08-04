@@ -70,6 +70,38 @@ def test_move_endpoint_across_files(client):
     assert [c["id"] for c in files["p.md"][0]["children"]] == ["api002", created["id"]]
 
 
+def test_move_endpoint_to_project_root_preserves_subtree_today_and_dependencies(client):
+    parent = client.post("/api/tasks", json={"title": "从 Inbox 移动"}).json()
+    child = client.post(
+        "/api/tasks", json={"title": "一起移动的子任务", "parent_id": parent["id"]}
+    ).json()
+    client.post("/api/today/toggle", json={"task_id": child["id"]})
+    client.patch("/api/tasks/api003", json={"depends_on": [parent["id"]]})
+
+    response = client.post(
+        f"/api/tasks/{parent['id']}/move", json={"project_path": "p.md"}
+    )
+
+    assert response.status_code == 200
+    moved = response.json()
+    assert moved["file"] == "p.md" and moved["level"] == 1
+    files = client.get("/api/tasks").json()["files"]
+    assert files.get("Inbox.md", []) == []
+    assert [task["id"] for task in files["p.md"]] == ["api001", "api003", parent["id"]]
+    assert files["p.md"][-1]["children"][0]["id"] == child["id"]
+    assert files["p.md"][1]["blocked"] is True
+    today_item = client.get("/api/today").json()["items"][0]
+    assert today_item["id"] == child["id"]
+    assert today_item["task"]["file"] == "p.md"
+
+
+def test_move_endpoint_requires_exactly_one_destination(client):
+    for payload in ({}, {"parent_id": "api001", "project_path": "p.md"}):
+        response = client.post("/api/tasks/api003/move", json=payload)
+        assert response.status_code == 400
+        assert response.json()["error"]["code"] == "BAD_REQUEST"
+
+
 def test_today_flow(client):
     client.post("/api/today/toggle", json={"task_id": "api001"})
     client.post("/api/today/toggle", json={"task_id": "api003"})
