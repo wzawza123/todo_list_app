@@ -20,8 +20,10 @@ export class ApiError extends Error {
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  const method = (init?.method ?? 'GET').toUpperCase()
   const res = await fetch(url, {
     ...init,
+    cache: init?.cache ?? (method === 'GET' ? 'no-store' : undefined),
     headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
   })
   if (!res.ok) {

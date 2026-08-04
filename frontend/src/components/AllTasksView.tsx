@@ -6,18 +6,23 @@ import { TaskTree } from './TaskTree'
 import { TaskRow } from './TaskRow'
 
 type GroupBy = 'file' | 'priority'
+type TaskScope = 'open' | 'all'
 
 export function AllTasksView() {
   const { snapshot } = useStore()
   const dndFor = useTaskDnd()
   const [groupBy, setGroupBy] = useState<GroupBy>('file')
-  const [hideDone, setHideDone] = useState(true)
+  const [scope, setScope] = useState<TaskScope>('open')
   const [hideBlocked, setHideBlocked] = useState(false)
   const [filter, setFilter] = useState('')
+  const hideDone = scope === 'open'
 
   const entries = Object.entries(snapshot.files).filter(
-    ([path, roots]) => roots.length > 0 && path.toLowerCase().includes(filter.toLowerCase()),
+    ([path, roots]) =>
+      path.toLowerCase().includes(filter.toLowerCase()) && hasVisibleTask(roots, hideDone, hideBlocked),
   )
+  const priorityGroups = groupBy === 'priority' ? groupByPriority(entries, hideDone, hideBlocked) : []
+  const empty = groupBy === 'file' ? entries.length === 0 : priorityGroups.length === 0
 
   return (
     <div className="flex h-full flex-col">
@@ -40,9 +45,18 @@ export function AllTasksView() {
             <option value="file">按文件</option>
             <option value="priority">按优先级</option>
           </select>
-          <label className="flex items-center gap-1">
-            <input type="checkbox" checked={hideDone} onChange={(e) => setHideDone(e.target.checked)} /> 隐藏已完成
-          </label>
+          <div
+            role="group"
+            aria-label="任务显示范围"
+            className="flex overflow-hidden rounded border border-neutral-200 bg-neutral-50 p-0.5"
+          >
+            <ScopeButton active={scope === 'open'} onClick={() => setScope('open')}>
+              未完成任务
+            </ScopeButton>
+            <ScopeButton active={scope === 'all'} onClick={() => setScope('all')}>
+              所有任务
+            </ScopeButton>
+          </div>
           <label className="flex items-center gap-1">
             <input type="checkbox" checked={hideBlocked} onChange={(e) => setHideBlocked(e.target.checked)} /> 隐藏阻塞
           </label>
@@ -62,7 +76,7 @@ export function AllTasksView() {
                 />
               </section>
             ))
-          : groupByPriority(entries, hideDone, hideBlocked, filter).map(([p, tasks]) => (
+          : priorityGroups.map(([p, tasks]) => (
               <section key={p} className="mb-4">
                 <div className="px-2 py-1 text-xs font-medium text-neutral-500">{PRIORITY_LABEL[p]}</div>
                 {tasks.map((t) => (
@@ -70,17 +84,51 @@ export function AllTasksView() {
                 ))}
               </section>
             ))}
-        {entries.length === 0 && <Empty />}
+        {empty && <Empty scope={scope} filtered={Boolean(filter.trim())} />}
       </div>
     </div>
   )
 }
 
-function Empty() {
+function ScopeButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean
+  onClick: () => void
+  children: string
+}) {
   return (
-    <div className="mt-24 text-center text-sm text-neutral-400">
-      还没有任务。按 <kbd>Q</kbd> 快速添加。
-    </div>
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={`rounded px-2 py-0.5 font-medium transition ${
+        active ? 'bg-white text-blue-600 shadow-sm' : 'text-neutral-500 hover:text-neutral-800'
+      }`}
+    >
+      {children}
+    </button>
+  )
+}
+
+function Empty({ scope, filtered }: { scope: TaskScope; filtered: boolean }) {
+  const message = filtered
+    ? '没有符合当前筛选条件的任务。'
+    : scope === 'open'
+      ? '当前没有未完成任务。'
+      : '还没有任务。按 Q 快速添加。'
+  return (
+    <div className="mt-24 text-center text-sm text-neutral-400">{message}</div>
+  )
+}
+
+function hasVisibleTask(tasks: Task[], hideDone: boolean, hideBlocked: boolean): boolean {
+  return tasks.some(
+    (task) =>
+      (!(hideDone && task.status === 'done') && !(hideBlocked && task.blocked)) ||
+      hasVisibleTask(task.children, hideDone, hideBlocked),
   )
 }
 
@@ -92,7 +140,6 @@ function groupByPriority(
   entries: [string, Task[]][],
   hideDone: boolean,
   hideBlocked: boolean,
-  _filter: string,
 ): [Priority, Task[]][] {
   const flat: Task[] = []
   const walk = (ts: Task[]) => ts.forEach((t) => (flat.push(t), walk(t.children)))

@@ -129,6 +129,27 @@ def test_delete_cleans_today_and_deps(client):
     assert client.get("/api/tasks").json()["files"]["p.md"][0]["depends_on"] == []
 
 
+def test_delete_task_recomputes_project_summary(client):
+    client.patch("/api/tasks/api002", json={"status": "done"})
+    before = next(
+        project
+        for project in client.get("/api/projects").json()["projects"]
+        if project["path"] == "p.md"
+    )
+    assert (before["total_tasks"], before["completed_tasks"]) == (3, 1)
+
+    response = client.delete("/api/tasks/api001")
+
+    assert set(response.json()["removed"]) == {"api001", "api002"}
+    after = next(
+        project
+        for project in client.get("/api/projects").json()["projects"]
+        if project["path"] == "p.md"
+    )
+    assert (after["total_tasks"], after["completed_tasks"], after["progress"]) == (1, 0, 0)
+    assert [task["id"] for task in after["latest_tasks"]] == ["api003"]
+
+
 def test_files_endpoint_hides_today_dir(client):
     data = client.get("/api/files").json()
     assert all(not f["path"].startswith("Today/") for f in data["files"])

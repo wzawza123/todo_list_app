@@ -82,7 +82,8 @@ interface State {
 }
 
 let toastSeq = 0
-let refreshSeq = 0
+let refreshInFlight: Promise<void> | null = null
+let refreshQueued = false
 
 export const useStore = create<State>((set, get) => ({
   snapshot: { files: {}, warnings: [] },
@@ -117,29 +118,48 @@ export const useStore = create<State>((set, get) => ({
   },
 
   refresh: async () => {
-    const requestId = ++refreshSeq
-    const result = await get().run(async () => {
-      const [snapshot, files, projects, today] = await Promise.all([
-        api.tasks(),
-        api.files(),
-        api.projects(),
-        api.today(),
-      ])
-      return { snapshot, files, projects, today }
+    if (refreshInFlight) {
+      refreshQueued = true
+      return refreshInFlight
+    }
+
+    const runRefreshLoop = async () => {
+      do {
+        refreshQueued = false
+        const result = await get().run(async () => {
+          const [snapshot, files, projects, today] = await Promise.all([
+            api.tasks(),
+            api.files(),
+            api.projects(),
+            api.today(),
+          ])
+          return { snapshot, files, projects, today }
+        })
+        if (!result) {
+          set({ loading: false })
+          continue
+        }
+        set({
+          snapshot: result.snapshot,
+          files: result.files.files,
+          projects: result.projects.projects,
+          inbox: result.files.inbox,
+          today: result.today,
+          loading: false,
+        })
+      } while (refreshQueued)
+    }
+
+    refreshInFlight = runRefreshLoop().finally(() => {
+      refreshInFlight = null
     })
-    if (requestId !== refreshSeq) return
-    if (!result) return set({ loading: false })
-    set({
-      snapshot: result.snapshot,
-      files: result.files.files,
-      projects: result.projects.projects,
-      inbox: result.files.inbox,
-      today: result.today,
-      loading: false,
-    })
+    return refreshInFlight
   },
 
-  setView: (view) => set({ view, selected: null, detailOpen: false }),
+  setView: (view) => {
+    set({ view, selected: null, detailOpen: false })
+    if (view.kind === 'dashboard' || view.kind === 'projects') void get().refresh()
+  },
   select: (key) => set({ selected: key }),
 
   toggleCollapse: (key) =>

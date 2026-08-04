@@ -26,9 +26,10 @@ interface Props {
 }
 
 export function TaskRow({ task, indent = 0, showFile = false, dragHandle, dnd, endAction }: Props) {
-  const { selected, select, patchTask, toggleToday, todayIds, toggleCollapse, collapsed, setDetailOpen, taskById } =
+  const { selected, select, patchTask, deleteTask, toggleToday, todayIds, toggleCollapse, collapsed, taskById } =
     useStore()
   const [editing, setEditing] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [draft, setDraft] = useState(task.title)
   const inputRef = useRef<HTMLInputElement>(null)
   const rowRef = useRef<HTMLDivElement>(null)
@@ -64,6 +65,13 @@ export function TaskRow({ task, indent = 0, showFile = false, dragHandle, dnd, e
     .filter((t): t is Task => !!t && t.status !== 'done')
 
   const openCount = countOpen(task.children)
+
+  const handleDelete = async () => {
+    if (!task.id || deleting || !confirm(`删除「${task.title}」及其所有子任务？`)) return
+    setDeleting(true)
+    await deleteTask(task.id)
+    setDeleting(false)
+  }
 
   return (
     <div
@@ -179,6 +187,28 @@ export function TaskRow({ task, indent = 0, showFile = false, dragHandle, dnd, e
       >
         ☀
       </button>
+
+      {task.id && (
+        <button
+          type="button"
+          data-nodrag
+          disabled={deleting}
+          aria-label={`删除任务「${task.title}」`}
+          title="删除任务"
+          onClick={(event) => {
+            event.stopPropagation()
+            void handleDelete()
+          }}
+          onDoubleClick={(event) => event.stopPropagation()}
+          className={`shrink-0 rounded px-1 text-xs transition hover:bg-red-50 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 disabled:cursor-wait disabled:text-neutral-300 ${
+            isSelected
+              ? 'text-neutral-400'
+              : 'invisible text-neutral-300 group-hover:visible focus-visible:visible'
+          }`}
+        >
+          {deleting ? '…' : '删除'}
+        </button>
+      )}
     </div>
   )
 }
